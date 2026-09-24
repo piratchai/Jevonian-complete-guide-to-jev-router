@@ -23,6 +23,7 @@ This guide walks through configuring independent Jevonian routers (one per CLI t
 13. [Claude Code: Problems You May Hit and How to Fix Them](#claude-code-problems-you-may-hit-and-how-to-fix-them)
 14. [One-Click CMD Launchers with Status Banner & Dynamic Architecture](#14-one-click-cmd-launchers-with-status-banner--dynamic-architecture)
 15. [Recommended Claude Code Architecture: gargpratyush/jev-router Evaluation & Plan](#15-recommended-claude-code-architecture-gargpratyushjev-router-evaluation--plan)
+16. [jev-gateway: Verified 6-Tier Routing for Claude Code + OpenCode](#16-jev-gateway-verified-6-tier-routing-for-claude-code--opencode)
 
 ---
 
@@ -2105,6 +2106,11 @@ The key file isn't where `start.js` looks. By default that's `%ROUTER%\credentia
 
 ### HTTP 400 on short/chatty turns (the Haiku chat tier)
 
+> **Different bug, same symptom:** if the log says `output_config.effort requires a model that
+> supports per-turn effort`, that is the **jev-gateway** per-message-effort issue — see
+> [section 16.4](#164-the-per-turn-output_config-bug-the-real-cause-of-the-sonnet-400), not the
+> Haiku 1M-context beta header below.
+
 The Haiku patch isn't active. Usually an `npm install` or upgrade overwrote it. Run `node patch-jevonian-haiku.mjs` and restart the router. Also check that the chat routing's `"providers"` is a **map**, `{"claude-haiku-4-5-20251001": ["claude-subscription-haiku"]}`, and not an array. An array is silently ignored, so Haiku gets the 1M-context beta header and rejects it.
 
 **Watch out:** on startup, `modelSync` can add more model ids to the `claude-subscription-haiku` provider's list in `config.json`. That's harmless as long as `claude-subscription` is listed first in `providers`. If the ledger ever shows Sonnet or Opus requests going through `claude-subscription-haiku`, set `"modelSync": { "enabled": false }` and remove the extra ids from the Haiku provider.
@@ -2623,6 +2629,258 @@ If all checks pass, you're ready to use Jevonian with OpenCode, Kilo, and Qwen.
 
 ---
 
-**Guide last verified:** 2026-09-23 (OpenCode/Kilo/Qwen sections), 2026-09-24 (Claude Code section)  
-**Jevonian version:** 0.1.6 (OpenCode/Kilo/Qwen), 0.1.7 (Claude Code section — see [Upgrading](#upgrading-jevonian-to-the-latest-version))  
-**Tested on:** Windows 11 (CMD), Node v22.23.2, Claude Code v2.1.281
+## 16. jev-gateway: Verified 6-Tier Routing for Claude Code + OpenCode
+
+> **This section documents the current, tested setup** — `jev-gateway` **v0.4.3** in
+> `D:\learn\gemini-mcp\gemini-blogdee-subdomain\jev-gateway` — as of **2026-09-24**.
+> It supersedes the older per-tool `jev-router` / Jevonian-npm-package approach in
+> sections 4–15 *for the Claude Code and OpenCode clients*: those two now share **one
+> gateway codebase** and one dashboard instead of two patched router folders.
+
+### 16.1 Why a gateway instead of a patched router
+
+The older approach patched `node_modules/jevonian` (`patch-jevonian-haiku.mjs`,
+`patch-jevonian-waf.mjs`) and ran one router folder per tool. That worked, but every
+upgrade re-broke the patches, and each client had its own ledger and dashboard.
+
+`jev-gateway` moves the routing logic into one small TypeScript service
+(`src/app.ts`, `src/decide.ts`, `src/adapters/*`) that:
+
+- speaks **Anthropic Messages**, **OpenAI Chat Completions**, **OpenAI Responses**, and
+  **Gemini** wire formats;
+- rewrites the outgoing `model` (and effort) per request based on a task/effort classifier
+  run through the **Jev brain** (TypeSafe, with Vercel as fallback);
+- keeps the client's own credentials — it only changes the **base URL**, so a Claude
+  Pro/Max subscription login or an existing API key keeps working untouched;
+- serves one **unified dashboard** that shows every client side by side.
+
+### 16.2 Ports and clients
+
+| Client | Launcher | Port | Upstream | Env switch |
+|---|---|---|---|---|
+| Claude Code | `node bin/jev-claude.mjs` (`npm run claude`) | **8789** | `https://api.anthropic.com/v1` | `ANTHROPIC_BASE_URL=http://127.0.0.1:8789` |
+| OpenCode | `node bin/jev-opencode.mjs` (`npm run opencode`) | **8791** | Alibaba Token Plan (`…/compatible-mode/v1`) | `opencode.json` provider `baseURL` |
+| Codex | `node bin/jev-codex.mjs` (`npm run codex`) | 8790 | follows your Codex login | `codex --profile jev` |
+| Gemini | `node bin/jev-gemini.mjs` (`npm run gemini`) | (see `JEV_GEMINI_PORT`) | Google | — |
+
+Ports come from `.env` (`JEV_CLAUDE_PORT=8789`, `JEV_OPENCODE_PORT=8791`); the launcher
+maps the `JEV_<CLIENT>_*` names onto the plain names the gateway process reads
+(`PORT`, `UPSTREAM_BASE_URL`, `JEV_CLIENT`).
+
+### 16.3 The routing tables (verified by dry-run)
+
+**Claude Code → Anthropic** (`src/config.ts` default, client `claude`):
+
+| Task tier | Routed model | Notes |
+|---|---|---|
+| `chat` | `claude-haiku-4-5-20251001` | thinking + `output_config` stripped, `max_tokens` clamped to 8192 |
+| `utility` | `claude-haiku-4-5-20251001` | same as chat |
+| `small` | `claude-haiku-4-5-20251001` | same as chat |
+| `medium` | `claude-sonnet-5` | request-level `output_config.effort` set |
+| `plan` | `claude-opus-5-5` | effort = **high** |
+| `large` | `claude-opus-5-5` | effort = **max** |
+
+**OpenCode → Alibaba Token Plan** (client `opencode`):
+
+| Task tier | Routed model |
+|---|---|
+| `chat` | `deepseek-v4.1-flash` |
+| `utility` | `qwen3.7-plus` |
+| `small` | `qwen3.8-flash` |
+| `medium` | `qwen3.7-plus` |
+| `plan` | `glm-5.3` |
+| `large` | `qwen3.8-max` |
+
+Every tier is overridable per gateway with `JEV_ROUTING_CHAT`, `JEV_ROUTING_UTILITY`,
+`JEV_ROUTING_SMALL`, `JEV_ROUTING_MEDIUM`, `JEV_ROUTING_PLAN`, `JEV_ROUTING_LARGE`.
+
+### 16.4 The per-turn `output_config` bug (the real cause of the Sonnet 400)
+
+**Symptom.** Claude Code sessions logged `upstream_rejected_passthrough`, and medium-tier
+requests silently fell back to Opus. The visible error was:
+
+```
+400 invalid_request_error: output_config.effort requires a model that supports
+per-turn effort; this model does not
+```
+
+**Cause.** When the *user* changes reasoning effort mid-conversation, Claude Code sends
+that change as a **`role:"system"` message carrying an `output_config`** (a beta feature,
+`mid-conversation-output-config-2026-07-01`). Only **Opus / Fable / Mythos** accept
+per-turn effort. The gateway correctly rewrote `medium → claude-sonnet-5`, but left those
+per-message `output_config` entries in place — and **Sonnet 5 rejects them with a 400**.
+The gateway then replayed the request on the original model (Opus), which is why the tier
+*looked* like it was routing but cost opus prices anyway.
+
+> This is **not** the older Haiku-400 issue in section 13. That one was about the 1M-context
+> beta header; this one is about **per-message effort** on Sonnet.
+
+**Fix** — `src/adapters/messages.ts`, around lines 131–188. Before forwarding:
+
+```ts
+// Only Opus/Fable/Mythos accept per-turn effort (a `role:"system"` message carrying an
+// `output_config`); on any other target model the API answers 400, so drop those entries
+// and let the request-level `output_config.effort` set the level instead.
+function stripEffort(val: unknown): void {
+  if (!val || typeof val !== "object") return;
+  if (Array.isArray(val)) {
+    for (let i = val.length - 1; i >= 0; i--) {
+      const item = val[i];
+      if (item && typeof item === "object") {
+        const record = item as Record<string, unknown>;
+        delete record.output_config;
+        delete record.effort;
+        if (record.role === "system") {
+          const content = record.content;
+          if (!content || (Array.isArray(content) && content.length === 0) || content === "") {
+            val.splice(i, 1);          // drop the now-empty system message
+            continue;
+          }
+        }
+      }
+      stripEffort(item);               // recurse into nested content blocks
+    }
+  } else {
+    const record = val as Record<string, unknown>;
+    if (record.output_config && typeof record.output_config === "object") {
+      delete (record.output_config as Record<string, unknown>).effort;
+      if (Object.keys(record.output_config).length === 0) delete record.output_config;
+    }
+    delete record.effort;
+    for (const v of Object.values(record)) stripEffort(v);
+  }
+}
+
+const isOpus = typeof res.model === "string" && res.model.toLowerCase().includes("opus");
+if (!isOpus) {
+  stripEffort(res);                    // Sonnet 5 (and Haiku) get NO per-message effort
+} else if (decision.effort) {
+  res.output_config = { ...existingOutput, effort: decision.effort };
+}
+
+// Haiku additionally does not support thinking at all:
+const isHaiku = …includes("haiku");
+if (isHaiku) {
+  delete res.thinking;
+  delete res.output_config;
+  delete res.context_management;
+  if (typeof res.max_tokens === "number" && res.max_tokens > 8192) res.max_tokens = 8192;
+}
+```
+
+**Result.** A rewritten request carries per-turn effort **only** when the target is Opus;
+Sonnet 5 and Haiku get a clean request plus a request-level `output_config.effort`. After
+this fix the gateway log shows **zero `upstream_rejected_passthrough`** entries.
+
+### 16.5 Start, stop, and verify
+
+```bat
+:: Claude Code gateway (8789)
+node bin\jev-claude.mjs --start
+node bin\jev-claude.mjs --stop
+curl http://127.0.0.1:8789/health
+::   {"status":"ok","pid":36996,"upstream":"https://api.anthropic.com/v1","jev":"typesafe"}
+
+:: OpenCode gateway (8791)
+node bin\jev-opencode.mjs --start
+node bin\jev-opencode.mjs --stop
+curl http://127.0.0.1:8791/health
+```
+
+**Dry-run a request without touching the provider** — the fastest way to prove the tier
+table. Any wire format works; `?format=` forces one:
+
+```bat
+curl -s -X POST "http://127.0.0.1:8789/router/decide?format=messages" ^
+  -H "content-type: application/json" ^
+  -d "{\"model\":\"claude-sonnet-4-5-20250929\",\"max_tokens\":64,\"messages\":[{\"role\":\"user\",\"content\":\"Design a 3-month migration plan with rollback strategy.\"}]}"
+::   -> routedModel: "claude-opus-5-5"   (plan tier)
+
+curl -s -X POST "http://127.0.0.1:8791/router/decide?format=chat" ^
+  -H "content-type: application/json" ^
+  -d "{\"messages\":[{\"role\":\"user\",\"content\":\"hey, you around?\"}]}"
+::   -> taskPhase: "chat", routedModel: "deepseek-v4.1-flash"
+```
+
+**Watch it live on the dashboard** — one page, both clients:
+
+```
+http://127.0.0.1:8789/dashboard          # unified: claude :8789 + opencode :8791
+```
+
+The dashboard has client filters (`All clients / claude / opencode`), a time range, per-client
+router cards, a *Why requests were not routed* table (task/effort reasons), token totals, and a
+**Recent requests** table whose `Model` column is the routed model. The same data is available
+as JSON: `GET /dashboard/events?since=0`.
+
+> **"Passthrough only" is not a failure.** When the model Claude Code already sent *equals* the
+> routed model, the gateway records `passthrough` and does not rewrite. A Claude session doing
+> **large** work already uses Opus 5.5, and `large → claude-opus-5-5`, so the card reads
+> "Passthrough only — mostly task=large effort=high." The routing table is still in force; there
+> was simply nothing to change.
+
+### 16.6 Verified evidence (2026-09-24)
+
+- **Claude dry-run:** chat/utility/small → `claude-haiku-4-5-20251001`, medium → `claude-sonnet-5`,
+  plan → `claude-opus-5-5` (high), large → `claude-opus-5-5` (max) — all 6 correct.
+- **Claude dashboard:** 13 live requests, `claude-opus-5-5` ×11 + `claude-haiku-4-5-20251001` ×2,
+  **all HTTP 200**, real 89k–102k-token sessions at ~95% cache.
+- **OpenCode dry-run:** chat → `deepseek-v4.1-flash`, utility/medium → `qwen3.7-plus`,
+  small → `qwen3.8-flash`, plan → `glm-5.3`, large → `qwen3.8-max` — all 6 correct.
+- **OpenCode dashboard:** 5 live requests, `qwen3.8-flash` ×5, **all HTTP 200**; representative row
+  `task=small effort=medium`, 182 tools, 70,860 input tokens (69,888 cached), 5.3 s.
+- **Zero `upstream_rejected_passthrough`** after the section 16.4 fix.
+
+> **Note on the two `haiku … 401` rows you may see.** They are synthetic probes sent with a fake
+> `x-api-key:test`, not real traffic. `jev-gateway` forwards the client's own credential upstream
+> and deliberately does **not** hold an Anthropic key of its own, so Claude Code keeps using its
+> saved claude.ai Pro/Max login. A fake key therefore 401s at Anthropic — proof the pass-through
+> of credentials is working exactly as intended.
+
+### 16.7 OpenCode client wiring
+
+`jev-router-opencode/opencode.json` (also mirrors into `~/.config/opencode/opencode.json`):
+
+```json
+{
+  "provider": {
+    "jevonian": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Jevonian (Jev router -> Alibaba)",
+      "options": { "baseURL": "http://127.0.0.1:8791/v1", "apiKey": "sk-sp-…" },
+      "models": {
+        "auto":   { "name": "Jev Auto (Jev picks the model each turn)" },
+        "chat":   { "name": "Jev Chat = deepseek-v4.1-flash (pinned)" },
+        "small":  { "name": "Jev Small = qwen3.8-flash (pinned)" },
+        "medium": { "name": "Jev Medium = qwen3.7-plus (pinned)" },
+        "plan":   { "name": "Jev Plan = glm-5.3 (pinned)" },
+        "large":  { "name": "Jev Large = qwen3.8-max (pinned)" }
+      }
+    }
+  },
+  "model": "jevonian/auto",
+  "small_model": "jevonian/small"
+  // permission: { "*": "allow", "bash": "allow", "edit": "allow", … }
+}
+```
+
+`jevonian/auto` lets the gateway classify every turn; the pinned `jevonian/<tier>` variants force
+one tier. If the readme's older per-tool OpenCode router (section 6) is still installed, make sure
+only **one** process owns port 8791.
+
+### 16.8 jev-gateway troubleshooting quick list
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `upstream_rejected_passthrough` in the log; tier appears to route but bills Opus | Per-message `output_config` on a non-Opus target (section 16.4) | Apply the `stripEffort` fix and restart the gateway |
+| Gateway returns `401 {"type":"invalid_api_key"}` on every call | `ROUTER_API_KEY` is set and the client is not sending it | Unset it, or send `Authorization: Bearer <key>` (the dashboard accepts `?key=`) |
+| Every call 401s but the gateway has no router key | The **client's** credential is invalid; the gateway forwards it unchanged | Re-login the client (Claude Code `/login`, or check the OpenCode API key) |
+| `EADDRINUSE` on 8789 / 8791 | Another gateway (or the old per-tool router) owns the port | `node bin/jev-<client>.mjs --stop`, or point the port elsewhere in `.env` |
+| Dashboard card shows "Passthrough only" | Sent model already equals the routed model | Expected — see the note in section 16.5 |
+| Launcher on Windows mis-quotes a multi-word `-p` prompt | `shell:true` quoting in `bin/launcher.mjs` | Quote the prompt yourself, or use the interactive client |
+
+---
+
+**Guide last verified:** 2026-09-23 (OpenCode/Kilo/Qwen sections), 2026-09-24 (Claude Code section), **2026-09-24 (jev-gateway v0.4.3 section 16 — Claude Code 8789 + OpenCode 8791, dry-run + live dashboard)**  
+**Jevonian version:** 0.1.6 (OpenCode/Kilo/Qwen), 0.1.7 (Claude Code section — see [Upgrading](#upgrading-jevonian-to-the-latest-version)), **jev-gateway 0.4.3 (section 16)**  
+**Tested on:** Windows 11 (CMD), Node v22.23.2, Claude Code v2.1.281, OpenCode v1.18.32
