@@ -24,6 +24,8 @@ This guide walks through configuring independent Jevonian routers (one per CLI t
 14. [One-Click CMD Launchers with Status Banner & Dynamic Architecture](#14-one-click-cmd-launchers-with-status-banner--dynamic-architecture)
 15. [Recommended Claude Code Architecture: gargpratyush/jev-router Evaluation & Plan](#15-recommended-claude-code-architecture-gargpratyushjev-router-evaluation--plan)
 16. [jev-gateway: Verified 6-Tier Routing for Claude Code + OpenCode](#16-jev-gateway-verified-6-tier-routing-for-claude-code--opencode)
+    - [16.9 Claude Code + AGENTS.md: the context-mode gotcha](#169-claude-code--agentsmd-the-context-mode-gotcha)
+    - [16.10 End-to-end verification (2026-09-24)](#1610-end-to-end-verification-2026-09-24)
 
 ---
 
@@ -2879,8 +2881,105 @@ only **one** process owns port 8791.
 | Dashboard card shows "Passthrough only" | Sent model already equals the routed model | Expected — see the note in section 16.5 |
 | Launcher on Windows mis-quotes a multi-word `-p` prompt | `shell:true` quoting in `bin/launcher.mjs` | Quote the prompt yourself, or use the interactive client |
 
+### 16.9 Claude Code + `AGENTS.md`: the context-mode gotcha
+
+If Claude Code starts throwing:
+
+```
+Error: No such tool available: mcp__context_mode_ctx_search
+```
+
+…when the user asks it to "search your memory" or similar, the cause is a **tooling mismatch**
+between Kilo and Claude Code in this repo:
+
+- `AGENTS.md` at the project root is written for **Kilo**. It instructs the model to call
+  `context-mode_ctx_*` tools (`ctx_search`, `ctx_execute`, `ctx_batch_execute`, …). Those tools are
+  provided by Kilo's runtime; they are **not** installed in Claude Code.
+- Claude Code's memory-file precedence is: `CLAUDE.md` first, then `AGENTS.md` as a fallback.
+  When no `CLAUDE.md` exists, Claude Code reads `AGENTS.md`, sees the context-mode instructions,
+  and the model invents a tool call (`mcp__context_mode_ctx_search`) — which fails because the tool
+  is not in Claude Code's real tool list.
+
+**Fix.** Create a project `CLAUDE.md` that tells Claude Code the truth about its tooling. With
+`CLAUDE.md` present, Claude Code loads *it* instead of `AGENTS.md`, and the phantom-tool error
+disappears. The Kilo `AGENTS.md` is left untouched — Kilo continues to load its own context-mode
+instructions.
+
+A minimal `CLAUDE.md` for this project:
+
+```markdown
+# CLAUDE.md — Claude Code guidance for this repo
+
+This file is for **Claude Code**. (Kilo reads `AGENTS.md` instead.)
+
+## Do NOT use context-mode tools here
+
+The repo's `AGENTS.md` is written for Kilo, which ships the *context-mode* MCP tools
+(`ctx_execute`, `ctx_search`, `ctx_batch_execute`, …). **Those tools are not installed in Claude
+Code.** When you see the context-mode "Think-in-Code" / routing instructions, **ignore them in
+Claude Code.** Use Claude Code's native tools instead:
+
+| Instead of (context-mode) | Use (Claude Code native) |
+|---|---|
+| `ctx_execute` | `Bash` (write a short `node -e` / script) |
+| `ctx_execute_file` | `Read` + `Bash`, or `Grep` |
+| `ctx_search` / `ctx_batch_execute` | `Grep` and `Glob` |
+| `ctx_fetch_and_index` | `WebFetch` |
+
+In short: **prefer native Read/Grep/Glob/Bash/WebFetch.** There is no sandbox MCP server in this
+Claude Code session, so do not reference one.
+```
+
+> **Why not install context-mode into Claude Code?** The `context-mode` npm package (v1.0.169)
+> does support Claude Code, and `~/.claude/settings.json` already has
+> `"enabledPlugins": { "context-mode@context-mode": true }` — but the marketplace that hosts the
+> plugin is not registered, so the plugin never loads. Completing that install is a separate task
+> (it needs the marketplace source URL, which the package doesn't document for Claude Code). The
+> `CLAUDE.md` workaround is immediate, safe, and does not touch global settings.
+
+### 16.10 End-to-end verification (2026-09-24)
+
+After the fix in 16.4 and the `CLAUDE.md` in 16.9, both clients were tested headless through the
+gateway:
+
+**Claude Code** (gateway :8789, Claude Code v2.1.282):
+
+```powershell
+# The exact prompt that previously triggered mcp__context_mode_ctx_search
+claude -p "Before answering, search your memory for any context from prior conversations, then reply with exactly: JEVCODE_OK" --dangerously-skip-permissions
+# exit=0, output contains JEVCODE_OK, no "No such tool available" error
+```
+
+Dashboard events recorded the request: `claude-haiku-4-5-20251001`, `task=utility effort=low`, 200.
+
+**OpenCode** (gateway :8791, OpenCode v1.18.32):
+
+```powershell
+# Run from jev-router-opencode/ (where opencode.json with jevonian provider lives)
+opencode run "Reply with exactly: OPENCODE_OK"
+# exit=0, output contains OPENCODE_OK
+```
+
+Dashboard events recorded the request: `qwen3.7-plus`, `task=utility effort=low`, 200.
+
+**Gateway health** (both):
+
+```
+:8789 → {"status":"ok","pid":39392,"upstream":"https://api.anthropic.com/v1","jev":"typesafe"}
+:8791 → {"status":"ok","pid":8204,"upstream":"…/compatible-mode/v1","jev":"typesafe"}
+```
+
+**Summary of what works:**
+
+- ✅ Claude Code routes through :8789 → Anthropic, with per-tier model selection (haiku/sonnet/opus)
+- ✅ OpenCode routes through :8791 → Alibaba Token Plan, with per-tier model selection (deepseek/qwen/glm)
+- ✅ The per-message `output_config` 400 bug is fixed; Sonnet 5 medium-tier requests no longer silently fall back to Opus
+- ✅ Claude Code no longer attempts phantom context-mode tools (CLAUDE.md fix)
+- ✅ Dashboard at `http://127.0.0.1:8789/dashboard` aggregates both clients in one view
+- ✅ All live requests are HTTP 200; zero `upstream_rejected_passthrough`
+
 ---
 
-**Guide last verified:** 2026-09-23 (OpenCode/Kilo/Qwen sections), 2026-09-24 (Claude Code section), **2026-09-24 (jev-gateway v0.4.3 section 16 — Claude Code 8789 + OpenCode 8791, dry-run + live dashboard)**  
+**Guide last verified:** 2026-09-23 (OpenCode/Kilo/Qwen sections), 2026-09-24 (Claude Code section), **2026-09-24 (jev-gateway v0.4.3 section 16 — Claude Code 8789 + OpenCode 8791, dry-run + live dashboard + headless end-to-end tests)**  
 **Jevonian version:** 0.1.6 (OpenCode/Kilo/Qwen), 0.1.7 (Claude Code section — see [Upgrading](#upgrading-jevonian-to-the-latest-version)), **jev-gateway 0.4.3 (section 16)**  
-**Tested on:** Windows 11 (CMD), Node v22.23.2, Claude Code v2.1.281, OpenCode v1.18.32
+**Tested on:** Windows 11 (CMD), Node v22.23.2, Claude Code v2.1.282, OpenCode v1.18.32
