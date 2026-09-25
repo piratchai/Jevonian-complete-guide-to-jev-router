@@ -36,6 +36,7 @@ Verified on 2026-09-25 (see [Proof of working](#15-proof-of-working)):
 
 ## Contents
 
+0. [Quickstart TL;DR (5-minute setup)](#0-quickstart-tldr-5-minute-setup)
 1. [What you will build](#1-what-you-will-build)
 2. [Accounts, keys and providers](#2-accounts-keys-and-providers)
 3. [Prerequisites](#3-prerequisites)
@@ -53,6 +54,33 @@ Verified on 2026-09-25 (see [Proof of working](#15-proof-of-working)):
 15. [Proof of working](#15-proof-of-working)
 - [Appendix A: the command layer, every file in full](#appendix-a-the-command-layer-every-file-in-full)
 - [Appendix B: exact diff of the patched Jevonian against the official 0.1.7](#appendix-b-exact-diff-of-the-patched-jevonian-against-the-official-017)
+
+---
+
+## 0. Quickstart TL;DR (5-minute setup)
+
+If you already understand the architecture and want to get the routers and gateways running immediately on your machine:
+
+1. **Pick a root folder (`%JEVAI%`):**
+   Choose any directory (e.g. `D:\learn\JevAI` or `C:\Users\<user>\JevAI`). Two sibling folders will live here: `%JEVAI%\jevonian` and `%JEVAI%\jev-gateway`.
+2. **Add the 3 API key files:**
+   - `%JEVAI%\jevonian\credentials\qwen-alibaba-credential.txt` → `API Key: sk-...` (Alibaba Model Studio Token Plan)
+   - `%JEVAI%\jevonian\credentials\typesafe-ai-credential.txt` and `%JEVAI%\jev-gateway\credentials\typesafe-ai-credential.txt` → the raw key alone (TypeSafe `jev-latest`)
+   - `%JEVAI%\jevonian\credentials\vercel-ai-gateway-credential.txt` → the raw key alone (`AI_GATEWAY_API_KEY` fallback from Vercel AI Gateway)
+3. **Verify prerequisites & client logins:**
+   - Node.js 22.15+ & npm installed.
+   - Globally installed tools on `PATH`: `qwen`, `kilo`, `opencode`, `claude`.
+   - **Crucial:** Run `claude` once and log in with `/login` to store your OAuth session in `%USERPROFILE%\.claude\.credentials.json`.
+4. **Install & start:**
+   - Run `npm install --no-audit --no-fund` in each of the 4 `jev-router-*` folders and `jev-gateway`.
+   - Run `node %JEVAI%\jevonian\jev.js install` (installs CMD doskey macros & AutoRun).
+   - *If using PowerShell or VS Code terminal:* Add the PowerShell functions to your profile (see [PowerShell integration](#powershell-and-vs-code-terminal-integration)).
+   - Run `jev start` (or start via `node %JEVAI%\jevonian\jev.js start`).
+5. **Verify:**
+   - `jev status` → all 6 servers must report `UP`.
+   - `jev test brains` → `8/8` passed.
+   - `jev test clients` → `12/12` passed.
+   - Open the web dashboards: [http://127.0.0.1:8793/logs](http://127.0.0.1:8793/logs) (Qwen), [http://127.0.0.1:8797/logs](http://127.0.0.1:8797/logs) (Claude), or [http://127.0.0.1:8789/dashboard](http://127.0.0.1:8789/dashboard) (Gateways).
 
 ---
 
@@ -184,13 +212,12 @@ OpenCode or Qwen account, and no Jevonian API key.
 
 ## 3. Prerequisites
 
-- **Windows 10/11 and CMD.** Windows Terminal is fine; the status windows open in it.
-- **No administrator rights needed.** `jev install` writes one per-user registry value (see step 7).
-- **Node.js 22.15 or newer, with npm.** jev-gateway needs 22.15+, and Jevonian needs 22+.
-- **The four clients on your `PATH`, and Claude Code logged in** with your Claude subscription.
-
-Check them **before** step 7. Afterwards `claude`, `kilo`, `opencode` and `qwen` become the routed commands, and the real
-ones are `claude-direct`, `kilo-direct`, `opencode-direct` and `qwen-direct`.
+- **Windows 10/11 and Shell Choice:**
+  - The default setup uses **CMD** because CMD supports `doskey` macros and the `AutoRun` registry entry out of the box.
+  - **If you use PowerShell, Windows Terminal (default profile), or VS Code integrated terminal:** `doskey` macros will **not** execute there. You must add the PowerShell profile functions provided in [PowerShell and VS Code Terminal Integration](#powershell-and-vs-code-terminal-integration) to use the shorthand commands (`qwen`, `kilo`, `claude`, etc.) in PowerShell.
+- **No administrator rights needed:** `jev install` writes only to current-user registry (`HKCU`).
+- **Node.js 22.15 or newer, with npm:** jev-gateway requires 22.15+, and Jevonian requires 22+.
+- **The four client CLI tools on your `PATH`:**
 
 ```bat
 node --version
@@ -204,21 +231,52 @@ qwen --version
 Versions used for this guide (2026-09-25), and how they were installed on this PC. Any install method works, as long as
 the command is on `PATH`:
 
-| Tool | Version | Installed at |
+| Tool | Version | Installed at | How to install if missing |
+|---|---|---|---|
+| Node.js / npm | v22.23.2 / 10.9.8 | `C:\nvm4w\nodejs` | via nvm-windows, winget, or nodejs.org |
+| Claude Code | 2.1.282 | `%USERPROFILE%\.local\bin\claude.exe` | `npm install -g @anthropic-ai/claude-code` or native installer |
+| OpenCode | 2.0.15 | `%USERPROFILE%\.bun\bin\opencode.exe` | `bun add -g opencode-ai` or `npm install -g opencode-ai` |
+| Kilo (Kilo Code CLI) | 7.7.9 | `%USERPROFILE%\.bun\bin\kilo.exe` | `bun add -g @kilo/cli` or `npm install -g @kilo/cli` |
+| Qwen Code | 0.24.4 | `C:\nvm4w\nodejs\qwen.cmd` | `npm install -g @qwen-code/cli` |
+| jevonian | 0.1.7 (latest on npm and on GitHub `main`) | installed locally in step 3 | local project dependency |
+| jev-gateway | 0.4.3 (latest on npm) | installed locally in step 4 | local project dependency |
+
+### 3.1 Client Authentication & Setup Checklist
+
+Before running routed commands, ensure each client tool is in a ready state:
+
+1. **Claude Code OAuth Login:**
+   - **Crucial:** Claude Code must be logged in beforehand with an active **Claude Pro or Max** subscription.
+   - Run `claude`, execute `/login`, and complete the browser flow.
+   - The Claude router relies on `%USERPROFILE%\.claude\.credentials.json` (OAuth access/refresh tokens); it has no API key of its own.
+2. **OpenCode 2.x Requirements:**
+   - OpenCode 2.x introduces a daemon/service model. The router commands pass `--standalone` and pin `PWD` to prevent background services from picking up unrelated directory configurations.
+   - In automated scripts or piped commands, `opencode run` expects an EOF or closed stdin; redirect `< nul` in CMD or use null-piped input in PowerShell (see [Known behaviours](#11-known-behaviours-and-limits)).
+3. **Kilo Code CLI:**
+   - Ensure Kilo is initialized. The router injects `KILO_CONFIG_CONTENT` pointing to `jev-router-kilo\.kilo\kilo.json` and pins `-m jevonian/jevonian/auto`.
+4. **Qwen Code:**
+   - Ensure `qwen` is runnable from command line. The launcher injects `--auth-type openai --openai-base-url http://127.0.0.1:8793/v1` dynamically.
+
+### 3.2 Enterprise Security & EDR Notice (Cylance, CrowdStrike, AppLocker)
+
+In corporate environments with strict endpoint protection:
+- **Registry AutoRun Restrictions:** Some EDR policies block or audit changes to `HKCU\Software\Microsoft\Command Processor\AutoRun`. If `jev install` fails or is reverted by group policy, you can run commands directly via `node path\to\jevonian\kilo.js` or use PowerShell functions.
+- **PowerShell Script Blocking:** Security agents like Cylance Script Control may block chained PowerShell expressions joined with semicolons (`;`). Run commands individually, use CMD, or invoke scripts via `node path/to/script.js`.
+
+### 3.3 Port Allocation & Conflicts
+
+This setup reserves **8 local TCP ports** (listening strictly on `127.0.0.1`):
+
+| Port | Service | Notes |
 |---|---|---|
-| Node.js / npm | v22.23.2 / 10.9.8 | `C:\nvm4w\nodejs` (nvm for Windows) |
-| Claude Code | 2.1.282 | `%USERPROFILE%\.local\bin\claude.exe` (Claude Code's native installer) |
-| OpenCode | 2.0.15 | `%USERPROFILE%\.bun\bin\opencode.exe` (bun global) |
-| Kilo (Kilo Code CLI) | 7.7.9 | `%USERPROFILE%\.bun\bin\kilo.exe` (bun global) |
-| Qwen Code | 0.24.4 | `C:\nvm4w\nodejs\qwen.cmd` (npm global) |
-| jevonian | 0.1.7 (latest on npm and on GitHub `main`) | installed locally in step 3 |
-| jev-gateway | 0.4.3 (latest on npm) | installed locally in step 4 |
+| `8789` | `jev-gateway` (Claude) | Forwards to `:8797` |
+| `8791` | `jev-gateway` (OpenCode) | Forwards to `:8799` |
+| `8793` / `8794` | `jev-router-qwen` | `:8793` router + `:8794` tunnel surface (requires key) |
+| `8795` / `8796` | `jev-router-kilo` | `:8795` router + `:8796` tunnel surface (requires key) |
+| `8797` / `8798` | `jev-router-claude` | `:8797` router + `:8798` tunnel surface (requires key) |
+| `8799` / `8800` | `jev-router-opencode` | `:8799` router + `:8800` tunnel surface (requires key) |
 
-Claude Code must be logged in with a **Claude Pro or Max** account. Run `claude`, type `/login`, and follow it. The Claude
-router uses that login and has no API key of its own.
-
-**Free ports:** 8789, 8791 (jev-gateway) and 8793 to 8800 (Jevonian: each router uses its port and port+1). Check with
-`netstat -ano | findstr LISTENING | findstr ":878 :879 :880"`: it must print nothing (see [step 0](#step-0-choose-the-root-folder-and-stop-any-other-copy)).
+Check before starting: `netstat -ano | findstr LISTENING | findstr ":878 :879 :880"`. It must return empty.
 
 ---
 
@@ -1926,6 +1984,31 @@ doesn't need `%JEVAI%`. A doskey macro file has no comment syntax, so it has no 
 or with `cmd /d`. There, run the file directly, for example `node %JEVAI%\jevonian\kilo.js run "…"`. The commands behave the
 same; the macro only saves typing.
 
+#### PowerShell and VS Code Terminal Integration
+
+Because modern Windows (Windows Terminal, VS Code, PowerShell 5.1 & 7+) defaults to PowerShell rather than CMD, `doskey` macros will not be available in those shells.
+
+To make `qwen`, `kilo`, `opencode`, `claude`, `jev-claude`, `jev-opencode`, and `jev` work identically in any PowerShell terminal:
+
+1. Open (or create) your PowerShell profile in Notepad:
+   ```powershell
+   if (!(Test-Path -Path $PROFILE)) { New-Item -ItemType File -Path $PROFILE -Force }
+   notepad $PROFILE
+   ```
+2. Paste the following functions (adjust `$env:JEVAI` if your root folder is different):
+   ```powershell
+   # Jevonian & jev-gateway CLI integrations
+   $env:JEVAI = "D:\learn\JevAI"
+   function qwen         { & node "$env:JEVAI\jevonian\qwen.js" @args }
+   function kilo         { & node "$env:JEVAI\jevonian\kilo.js" @args }
+   function opencode     { & node "$env:JEVAI\jevonian\opencode.js" @args }
+   function claude       { & node "$env:JEVAI\jevonian\claude.js" @args }
+   function jev-claude   { & node "$env:JEVAI\jev-gateway\jev-claude.js" @args }
+   function jev-opencode { & node "$env:JEVAI\jev-gateway\jev-opencode.js" @args }
+   function jev          { & node "$env:JEVAI\jevonian\jev.js" @args }
+   ```
+3. Save and open a new PowerShell terminal. You can now use all commands natively!
+
 ### Step 8: start everything
 
 ```bat
@@ -2506,6 +2589,21 @@ fixed model.
 same command, router and wiring. Typing into the TUIs from a script was blocked by this PC's endpoint protection, and
 wasn't worked around.
 
+**12. Windows Job Objects & Background Process Lifecycles:**
+- `jev start` and `start.js` launch background processes using Node's `spawn(..., { detached: true })`. This works smoothly in interactive CMD/PowerShell windows.
+- However, in automated scripts, CI pipelines, subshell wrappers, or terminal panes that close immediately upon command completion, Windows Job Objects may automatically terminate any child processes attached to that session.
+- To keep the routers and gateways running persistently:
+  - Keep a status terminal open via `jev windows`, or
+  - Start them inside a dedicated long-running console window, or
+  - Manage them as background services / daemons (e.g. via PM2 or NSSM if running headless on a server).
+
+**13. Non-interactive Automation & Stdin Redirection:**
+- When running one-shot commands (`opencode run`, `claude -p`) from automated scripts or tools without an interactive TTY, some clients hang waiting for user input on `stdin`.
+- Always close or redirect standard input when executing non-interactively:
+  - **In CMD:** `node %JEVAI%\jevonian\opencode.js run "prompt" < nul`
+  - **In PowerShell:** `$null | node $env:JEVAI\jevonian\opencode.js run "prompt"`
+  - **In Node.js:** Use `spawnSync(..., { stdio: ["ignore", "inherit", "inherit"] })` or `{ input: "" }`.
+
 ---
 
 ## 12. Troubleshooting
@@ -2515,8 +2613,9 @@ First check `jev status` (what's up), `jev logs <name>` (why a router or gateway
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `kilo`, `claude`… open the plain client, or "is not recognized" | The CMD window was opened before `jev install`, or you're in PowerShell / a `.bat` (no doskey macros there) | Open a **new** CMD window, or run `node %JEVAI%\jevonian\kilo.js …` |
+| `kilo`, `claude`… open the plain client, or "is not recognized" | The CMD window was opened before `jev install`, or you're in PowerShell / VS Code terminal | In CMD: open a **new** window. In PowerShell: add functions to `$PROFILE` (see [PowerShell integration](#powershell-and-vs-code-terminal-integration)). |
 | "Invalid macro definition." in every new CMD window | A line in `jev.doskey` that isn't `name=command` (e.g. a comment) | Run `jev install` again (it rewrites the file) |
+| Routers exit immediately after `jev start` when script closes | Terminal runner / Windows Job Object terminates detached children | Run routers in a dedicated persistent console window or with `jev windows` (see known behaviour 12) |
 | `[jev] qwen did not start on :8793` | A patch refused ("pattern … found N times"), a key is missing, or the port is taken | `jev logs qwen`; `netstat -ano \| findstr ":8793"` |
 | `WARNING: ALIBABA_TOKENPLAN_API_KEY is empty` in `serve.log` | A key file is missing or has no `API Key:` line | Fix `jevonian\credentials\` (step 2), then `jev restart` |
 | "Jev brain unavailable: all 2 configured brain(s) failed" | Both TypeSafe and Vercel failed (keys, network, a transient error) | `jev test brains`; check access to `api.typesafe.ai`; retry |
@@ -2527,7 +2626,7 @@ First check `jev status` (what's up), `jev logs <name>` (why a router or gateway
 | Kilo: "Add credits to continue, or switch to a free model" | Kilo ignored the config's default model and used its own cloud default | The `kilo` command always adds `-m jevonian/jevonian/auto`; with your own `-m`, name a `jevonian/jevonian/…` model |
 | Kilo / OpenCode can't find a file in your folder | `PWD` points elsewhere (see [known behaviour 7](#11-known-behaviours-and-limits)) | The commands set `PWD`. When running the real client, `set PWD=%CD%` first. |
 | OpenCode: "Model unavailable: jevonian/jevonian/auto" | A background OpenCode service holds another folder's config | The commands add `--standalone`. By hand: `opencode run --standalone …`. |
-| `opencode run` hangs with nothing in the ledger (scripts) | `run` reads stdin when it isn't a terminal | Add `< nul` |
+| `opencode run` hangs with nothing in the ledger (scripts) | `run` reads stdin when it isn't a terminal | Close stdin: add `< nul` in CMD or pipe `$null \|` in PowerShell (see known behaviour 13) |
 | Qwen: "Persisted model.baseUrl no longer matches" | Qwen cached an older selection | Harmless; pick `jevonian/auto` once with `/model` |
 | jev-gateway: "router on :8789 forwards to …, expected …" | A gateway started with other settings still owns the port | `jev stop jev-claude` (or `jev-claude --stop`), then run the command again |
 | `EADDRINUSE` when starting a gateway or router | Something owns the port, e.g. a Jevonian router's port + 1 | `netstat -ano \| findstr ":8791"`; never put a gateway on a router's port + 1 |
