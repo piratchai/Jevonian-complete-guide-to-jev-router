@@ -1,3 +1,13 @@
+> **Superseded later on 2026-09-25. See [readme.md](readme.md), which is authoritative.** Two things below changed:
+> 1. **jev-gateway is now used as officially released (0.4.3, unmodified)**, for Claude Code and OpenCode only. The local
+>    "6-tier" model-routing patch in section 5 was removed: too big a change to survive official upgrades. Model tiers
+>    and effort now come from Jevonian (`jev-opencode` chains jev-gateway → Jevonian with official settings only).
+> 2. **Ports and commands changed.** The Jevonian OpenCode router moved 8791 → 8799, Claude Code on Jevonian is 8797 (official
+>    `jevonian launch claude`), and jev-gateway uses its official defaults 8789/8791. The launchers are now plain CMD commands
+>    (`kilo`, `qwen`, `opencode`, `claude`, `jev-claude`, `jev-opencode`) via doskey + AutoRun (readme section 14).
+>
+> The per-tier effort findings (section 3) and the Windows gotchas (section 4) still hold.
+
 # Notes 2026-09-25: per-tier effort, port-aware launchers, jev-gateway 6-tier routing
 
 Add-on to [readme.md](readme.md). Everything below was built and tested on 2026-09-25 on Windows 11,
