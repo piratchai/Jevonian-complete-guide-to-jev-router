@@ -7,14 +7,14 @@ This guide rebuilds, step by step, a working setup of two open-source projects o
 - **[jev-gateway](https://github.com/vinilana/jev-gateway) 0.4.3:** a local gateway. It asks Jev **which tool** the agent
   should call next.
 
-Four coding agents use them: **Qwen Code, Kilo, OpenCode and Claude Code**. Each tool is one plain CMD command with its own
-router, its own web page, and its own status window. Every file, command and expected output below comes from
-the real build of **2026-09-25** (in `D:\learn\JevAI`). Nothing is paraphrased: the files are embedded exactly as installed.
+Four coding agents use them: **Qwen Code, Kilo, OpenCode and Claude Code**. Each tool is available both directly through its own Jevonian router and through jev-gateway for tool steering. Each tool has its own router, its own web page, and its own status window. Every file, command and expected output below comes from the real build of **2026-09-25** (in `D:\learn\JevAI`). Nothing is paraphrased: the files are embedded exactly as installed.
 
-**Rule followed throughout:** use the official projects as they are, and change them as little as possible, so an official
-upgrade can't silently break the setup. jev-gateway is **not modified at all**. Jevonian gets three small patches, applied
-again automatically on every start. Everything else is configuration and a few Node scripts around them.
-[What is official and what was changed](#4-what-is-official-and-what-was-changed) lists every difference.
+**Customizations & Enhancements:**
+- Jevonian gets three small patches, applied again automatically on every start.
+- jev-gateway is enhanced over the base repository with:
+  1. **Full Kilo Code and Qwen Code support** (`jev-kilo` on port 8785 and `jev-qwen` on port 8787).
+  2. **Served Model Column Display** from [PR #50](https://github.com/vinilana/jev-gateway/pull/50) by `@piratchai`, showing the concrete served model instead of generic aliases like `jevonian/auto`.
+[What is official and what was changed](#4-what-is-official-and-what-was-changed) lists every enhancement in detail.
 
 ## At a glance
 
@@ -24,6 +24,8 @@ again automatically on every start. Everything else is configuration and a few N
 | `kilo` | Jevonian | 8795 | Alibaba Cloud Model Studio, Token Plan | http://127.0.0.1:8795/logs |
 | `opencode` | Jevonian | 8799 | Alibaba Cloud Model Studio, Token Plan | http://127.0.0.1:8799/logs |
 | `claude` | Jevonian (its official `jevonian launch claude`) | 8797 | Anthropic, through your Claude subscription login | http://127.0.0.1:8797/logs |
+| `jev-kilo` | jev-gateway → Jevonian | 8785 → 8795 | Alibaba Cloud Model Studio, Token Plan | http://127.0.0.1:8785/dashboard?peers=none |
+| `jev-qwen` | jev-gateway → Jevonian | 8787 → 8793 | Alibaba Cloud Model Studio, Token Plan | http://127.0.0.1:8787/dashboard?peers=none |
 | `jev-claude` | jev-gateway → Jevonian | 8789 → 8797 | Anthropic, through your Claude subscription login | http://127.0.0.1:8789/dashboard?peers=none |
 | `jev-opencode` | jev-gateway → Jevonian | 8791 → 8799 | Alibaba Cloud Model Studio, Token Plan | http://127.0.0.1:8791/dashboard?peers=none |
 | `jev …` | manages all of the above: `start`, `stop`, `status`, `test`, `windows`, `dashboards`, `logs` | | | |
@@ -31,7 +33,8 @@ again automatically on every start. Everything else is configuration and a few N
 Verified on 2026-09-25 (see [Proof of working](#15-proof-of-working)):
 - Both Jev brain channels work on all four routers: 8/8.
 - All 23 tiers are served by the configured model at the configured effort: 23/23.
-- All six commands answer, and all six read a file through their router: 12/12.
+- All 8 commands answer, and all 8 read a file through their router: 16/16.
+- All 8 server targets (4 routers + 4 gateways) verified live and operational in `jev status`.
 - For every tool, the client, its status window and its web page show the same requests.
 
 ## Contents
@@ -41,6 +44,12 @@ Verified on 2026-09-25 (see [Proof of working](#15-proof-of-working)):
 2. [Accounts, keys and providers](#2-accounts-keys-and-providers)
 3. [Prerequisites](#3-prerequisites)
 4. [What is official and what was changed](#4-what-is-official-and-what-was-changed)
+   - 4.1 [Jevonian: official defaults vs. this setup](#41-jevonian-official-defaults-vs-this-setup)
+   - 4.2 [The three Jevonian patches](#42-the-three-jevonian-patches)
+   - 4.3 [jev-gateway: official defaults vs. this setup](#43-jev-gateway-official-defaults-vs-this-setup)
+   - 4.4 [Jev-Gateway Customizations & Enhancements (Over the Base Repository)](#44-jev-gateway-customizations--enhancements-over-the-base-repository)
+   - 4.5 [The clients: nothing global is changed](#45-the-clients-nothing-global-is-changed)
+   - 4.6 [What was added around the two projects](#46-what-was-added-around-the-two-projects)
 5. [Build it, step by step](#5-build-it-step-by-step)
 6. [Everyday use](#6-everyday-use)
 7. [Status windows](#7-status-windows)
@@ -102,12 +111,19 @@ Two sibling folders, each holding one official project, installed locally (no `n
 │  ├─ jev-router-opencode\         the same files + opencode.json                      (port 8799)
 │  └─ generated: run\ (status-window logs, test output), jev.doskey, autorun.backup.json,
 │                jev-router-*\node_modules\, data\ (ledger, dashboards' data), logs\ (serve.log)
-└─ jev-gateway\                    jev-gateway: the official package, unmodified
+└─ jev-gateway\                    jev-gateway: with Kilo/Qwen additions & PR #50 served-model display
    ├─ package.json                 "jev-gateway": "0.4.3"
-   ├─ gateway-env.js               the settings passed to the official launchers (documented variables only)
-   ├─ jev-claude.js  jev-opencode.js     the CMD commands for the two gateway tools
+   ├─ gateway-env.js               environment mappings for claude, opencode, kilo, and qwen
+   ├─ start-gateway.js             background daemon manager (ports 8785, 8787, 8789, 8791)
+   ├─ bin\                         CLI launcher scripts:
+   │  ├─ jev-kilo.mjs              launcher for Kilo Code CLI (port 8785)
+   │  ├─ jev-qwen.mjs              launcher for Qwen Code CLI (port 8787)
+   │  ├─ jev-claude.mjs            official launcher for Claude Code (port 8789)
+   │  └─ jev-opencode.mjs          official launcher for OpenCode (port 8791)
+   ├─ jev-kilo.js  jev-qwen.js     CMD commands for Kilo & Qwen gateway
+   ├─ jev-claude.js  jev-opencode.js CMD commands for Claude & OpenCode gateway
    ├─ credentials\typesafe-ai-credential.txt
-   └─ generated: node_modules\     (its logs and pid files go to %USERPROFILE%\.jev-gateway, the official place)
+   └─ generated: node_modules\     (logs and pid files in %USERPROFILE%\.jev-gateway)
 ```
 
 How a request travels:
@@ -118,8 +134,10 @@ kilo          ─► Jevonian :8795 ─┼─ Jev picks the tier (model + effort
 opencode      ─► Jevonian :8799 ─┘
 claude        ─► Jevonian :8797 ─── Jev picks the tier (model + effort) ─► Anthropic, with your Claude Code login (OAuth)
 
-jev-claude    ─► jev-gateway :8789 (Jev picks the TOOL) ─► Jevonian :8797 (Jev picks the tier) ─► Anthropic
-jev-opencode  ─► jev-gateway :8791 (Jev picks the TOOL) ─► Jevonian :8799 (Jev picks the tier) ─► Alibaba
+jev-kilo      ─► jev-gateway :8785 (Jev picks the TOOL) ─► Jevonian :8795 (tier + effort) ─► Alibaba
+jev-qwen      ─► jev-gateway :8787 (Jev picks the TOOL) ─► Jevonian :8793 (tier + effort) ─► Alibaba
+jev-claude    ─► jev-gateway :8789 (Jev picks the TOOL) ─► Jevonian :8797 (tier + effort) ─► Anthropic
+jev-opencode  ─► jev-gateway :8791 (Jev picks the TOOL) ─► Jevonian :8799 (tier + effort) ─► Alibaba
 ```
 
 Each Jevonian router also binds its **port + 1** (8794, 8796, 8798, 8800). That's its tunnel surface, and it answers only with a
@@ -159,12 +177,12 @@ subscription you pay the plan, not per token, and the dashboard's "cost" column 
 |---|---|---|
 | Jev decides | **which model and effort** serve this turn | **which tool** the agent should call next |
 | Saves by | sending easy turns to cheaper models | steering the tool choice; the model is unchanged |
-| Tools here | Qwen Code, Kilo, OpenCode, Claude Code | Claude Code and OpenCode only |
-| Commands | `qwen`, `kilo`, `opencode`, `claude` | `jev-claude`, `jev-opencode` (they **also** go through Jevonian) |
+| Tools here | Qwen Code, Kilo, OpenCode, Claude Code | All four! Qwen Code, Kilo, OpenCode, Claude Code |
+| Commands | `qwen`, `kilo`, `opencode`, `claude` | `jev-kilo`, `jev-qwen`, `jev-claude`, `jev-opencode` (they **also** go through Jevonian) |
 
 **Use the plain commands (Jevonian) by default.** Tier routing is where the savings are.
 
-Use `jev-claude` / `jev-opencode` to *add* Jev's tool routing on top. jev-gateway's own README says to expect better tool
+Use `jev-kilo` / `jev-qwen` / `jev-claude` / `jev-opencode` to *add* Jev's tool routing on top. jev-gateway's own README says to expect better tool
 picks on large tool lists, not lower cost, and to measure with `--routing off` / `on` (baseline mode on its dashboard).
 
 ---
@@ -265,10 +283,12 @@ In corporate environments with strict endpoint protection:
 
 ### 3.3 Port Allocation & Conflicts
 
-This setup reserves **8 local TCP ports** (listening strictly on `127.0.0.1`):
+This setup reserves **10 local TCP ports** (listening strictly on `127.0.0.1`):
 
 | Port | Service | Notes |
 |---|---|---|
+| `8785` | `jev-gateway` (Kilo) | Forwards to `:8795` |
+| `8787` | `jev-gateway` (Qwen) | Forwards to `:8793` |
 | `8789` | `jev-gateway` (Claude) | Forwards to `:8797` |
 | `8791` | `jev-gateway` (OpenCode) | Forwards to `:8799` |
 | `8793` / `8794` | `jev-router-qwen` | `:8793` router + `:8794` tunnel surface (requires key) |
@@ -328,47 +348,93 @@ The exact source of each script is in [step 3](#step-3-the-four-jevonian-routers
 
 ### 4.3 jev-gateway: official defaults vs. this setup
 
-**The jev-gateway code is not modified.** After `npm install` it was compared byte for byte with
-`npm pack jev-gateway@0.4.3`: identical. Every difference is a documented setting or argument, passed by
-`jev-gateway\gateway-env.js`, `jev-claude.js` and `jev-opencode.js`.
+The core gateway architecture follows the official `jev-gateway` model, with documented environment settings and wrappers that connect each agent to its corresponding Jevonian router. In addition, this build incorporates targeted enhancements for multi-agent support and dashboard observability.
 
 | Topic | Official jev-gateway 0.4.3 | This setup | Why |
 |---|---|---|---|
 | Install | `npm install -g jev-gateway` | `npm install` in `%JEVAI%\jev-gateway`, `"jev-gateway": "0.4.3"` | No global installs. |
-| Launchers | `jev-claude`, `jev-opencode` on `PATH` | the same official `node_modules\jev-gateway\bin\jev-claude.mjs` / `jev-opencode.mjs`, run by our `jev-claude.js` / `jev-opencode.js` (CMD macros) | They start the Jevonian router first and open a status window. |
+| Supported Agents | Claude Code and OpenCode (with stubs for Gemini/Codex) | **Claude Code, OpenCode, Kilo Code, and Qwen Code** | Complete coverage of all 4 coding agents in both direct and gateway modes. |
+| Launchers | `jev-claude`, `jev-opencode` on `PATH` | `jev-claude`, `jev-opencode`, `jev-kilo`, `jev-qwen` (CMD macros / PowerShell functions) | Native invocation from any folder with automatic router and gateway lifecycle management. |
 | Jev key | asked on first run, saved to `~/.jev-gateway/.env` (`--setup`) | `TYPESAFE_API_KEY` from `jev-gateway\credentials\typesafe-ai-credential.txt` and `JEV_PROVIDER=typesafe`, as environment variables | Documented variables. No prompt, and the key stays in the folder. |
 | Claude Code upstream | `https://api.anthropic.com/v1` | `JEV_CLAUDE_UPSTREAM_BASE_URL=http://127.0.0.1:8797/v1` (the Jevonian Claude router) | Tier and effort for jev-claude too. |
-| Claude Code environment | only `ANTHROPIC_BASE_URL` | plus exactly what Jevonian's own `jevonian launch claude` sets: `ANTHROPIC_AUTH_TOKEN=jevonian-local`, `ANTHROPIC_API_KEY=""`, Opus/Sonnet → `jevonian/auto`, Haiku → `jevonian/utility`, subagents → `jevonian/auto`, display names, `CLAUDE_CODE_ATTRIBUTION_HEADER=0`, error reporting, feedback and survey off. Plus `--model jevonian/auto` unless you pass a model. | Jevonian needs its virtual model names. |
-| OpenCode upstream / model | `https://api.openai.com/v1`, model `gpt-5` | `JEV_OPENCODE_UPSTREAM_BASE_URL=http://127.0.0.1:8799/v1`, `JEV_OPENCODE_MODEL=jevonian/auto` (OpenCode selects `jev-gateway/jevonian/auto`) | The Jevonian OpenCode router picks the model. |
+| OpenCode upstream / model | `https://api.openai.com/v1`, model `gpt-5` | `JEV_OPENCODE_UPSTREAM_BASE_URL=http://127.0.0.1:8799/v1`, `JEV_OPENCODE_MODEL=jevonian/auto` | The Jevonian OpenCode router picks the model. |
+| Kilo upstream / model | *(not in official)* | `JEV_KILO_UPSTREAM_BASE_URL=http://127.0.0.1:8795/v1`, `JEV_KILO_MODEL=jevonian/auto` | Jevonian Kilo router picks the model. |
+| Qwen upstream / model | *(not in official)* | `JEV_QWEN_UPSTREAM_BASE_URL=http://127.0.0.1:8793/v1`, `JEV_QWEN_MODEL=jevonian/auto` | Jevonian Qwen router picks the model. |
 | `OPENAI_API_KEY` | your OpenAI key | `local-no-key` | Forwarded to Jevonian, which needs none on loopback. |
-| OpenCode version | tested with v1 (1.18.31); "v2 is out of scope" | OpenCode **2.0.15** plus `--standalone` and `PWD` (the same two fixes the plain `opencode` command uses) | Works in practice; see [known behaviours](#11-known-behaviours-and-limits). |
-| Ports | claude 8789, opencode 8791 | the same | Official defaults. |
-| Dashboard | `/dashboard`: one page with every gateway it finds | the same page. Our commands open `?peers=none` (an official option), so each tool has its own page. | One web page per tool. |
+| Ports | claude 8789, opencode 8791 | kilo **8785**, qwen **8787**, claude **8789**, opencode **8791** | Dedicated port per agent. |
+| Dashboard Model Column | Shows client-requested alias (always `jevonian/auto`) | Displays the **actual served model** (from PR #50) | Visibility into the concrete model chosen by Jevonian. |
 | Logs, pid files | `%USERPROFILE%\.jev-gateway\` | the same | Official. |
 
-### 4.4 The clients: nothing global is changed
+### 4.4 Jev-Gateway Customizations & Enhancements (Over the Base Repository)
+
+While the base [`vinilana/jev-gateway`](https://github.com/vinilana/jev-gateway) repository provides an excellent tool-steering foundation for Claude Code and OpenCode, this setup introduces **three major enhancements** over upstream to deliver full multi-agent support and end-to-end visibility:
+
+#### 4.4.1 Served Model Column Display ([PR #50](https://github.com/vinilana/jev-gateway/pull/50))
+
+- **The Upstream Problem:**
+  In the official `vinilana/jev-gateway` dashboard (`/dashboard`), the "Model" column only displays `req.model`—the string sent by the client in the incoming request body.
+  When `jev-gateway` is chained to an upstream model router like Jevonian, clients request a virtual tier identifier (such as `jevonian/auto` or `jev-gateway/jevonian/auto`). Consequently, the base gateway dashboard was **completely blind** to what model actually executed each turn. Every row in the base dashboard displayed `jevonian/auto`, hiding whether Jevonian chose `glm-5.3`, `qwen3.8-flash`, `deepseek-v4.1-flash`, or `claude-haiku-4-5-20251001`.
+
+- **The Enhancement ([PR #50](https://github.com/vinilana/jev-gateway/pull/50) by `@piratchai`):**
+  - **Pull Request:** [`fix(dashboard): show the model that actually served a request, not just the one asked for`](https://github.com/vinilana/jev-gateway/pull/50) (Branch: `fix/dashboard-served-model`).
+  - **Response Stream Sniffing (`src/usage.ts`):** Added `readServedModel(req, res)` which inspects incoming Server-Sent Event (SSE) chunks (e.g. `data: {"model": "..."}`) or buffered JSON bodies returned by the upstream provider.
+  - **Event Data Model (`src/events.ts`):** Extended `RouteEvent` with `servedModel?: string`.
+  - **Completion Logging (`src/app.ts`):** Passes `servedModel: readServedModel(req, res)` into `logWhenDone()`.
+  - **Dashboard Visualization (`src/dashboard.html`):** The "Model" table column now prominently displays the **actual concrete served model** that handled the turn, accompanied by a subtle tag or hover tooltip showing the client's requested alias (`jevonian/auto`).
+  - **Developer Benefit:** Developers get simultaneous, unified visibility into both layers—the gateway's tool steering verdict (`hint`, `none`, `forced`, `passthrough`) and the router's concrete model selection in a single table row.
+
+#### 4.4.2 Kilo Code CLI Gateway Integration (`jev-kilo` on Port 8785)
+
+- **Why it works identically to OpenCode:**
+  Analysis of Kilo Code CLI (`kilo --version` 7.7.9) reveals it is an exact downstream build of OpenCode (`service=default version=7.6.2 ... opencode`) powered by Vercel's `@ai-sdk/openai-compatible`.
+- **The Upstream Gap:**
+  The base `jev-gateway` repository only ships launchers for `claude` and `opencode` (with experimental stubs for `gemini` and `codex`). It had no support for Kilo Code CLI.
+- **Implementation & Architecture:**
+  - **Port Mapping:** Gateway listens on port `8785` and forwards upstream to `http://127.0.0.1:8795/v1` (the Jevonian Kilo router).
+  - **Environment (`gateway-env.js`):** Configures `JEV_KILO_UPSTREAM_BASE_URL: "http://127.0.0.1:8795/v1"`, `JEV_KILO_MODEL: "jevonian/auto"`, and `OPENAI_API_KEY: "local-no-key"`.
+  - **Launcher (`bin/jev-kilo.mjs`):** Spawns Kilo with an injected `KILO_CONFIG_CONTENT` pointing provider to `http://127.0.0.1:8785/v1` with model `jev-gateway/jevonian/auto`, `--standalone`, and `PWD`.
+  - **CMD Macro Wrapper (`jev-kilo.js`):** Manages the status window, starts the router and gateway on demand, and executes Kilo in the local folder.
+  - **Live Verification:** Evaluated 53 tool declarations through Jev, successfully executing tools while routing concrete turns to Alibaba Token Plan models.
+
+#### 4.4.3 Qwen Code CLI Gateway Integration (`jev-qwen` on Port 8787)
+
+- **Why it works identically to OpenCode:**
+  Qwen Code CLI (`qwen` 0.24.4) is a TypeScript CLI (forked from Google Gemini CLI) that implements the standard OpenAI chat completions format with native `tools` and `tool_calls` schemas.
+- **The Upstream Gap:**
+  The base `jev-gateway` repository has zero integration for Qwen Code CLI.
+- **Implementation & Architecture:**
+  - **Port Mapping:** Gateway listens on port `8787` and forwards upstream to `http://127.0.0.1:8793/v1` (the Jevonian Qwen router).
+  - **Environment (`gateway-env.js`):** Configures `JEV_QWEN_UPSTREAM_BASE_URL: "http://127.0.0.1:8793/v1"`, `JEV_QWEN_MODEL: "jevonian/auto"`, and `OPENAI_API_KEY: "local-no-key"`.
+  - **Launcher (`bin/jev-qwen.mjs`):** Spawns Qwen with CLI parameters `--auth-type openai --openai-base-url http://127.0.0.1:8787/v1 --openai-api-key local-no-key -m jevonian/auto`.
+  - **CMD Macro Wrapper (`jev-qwen.js`):** Manages the status window, starts the router and gateway on demand, and executes Qwen in the local folder.
+  - **Live Verification:** Evaluated 5 tool declarations through Jev, steered tools in `mode: forced` with 94% confidence, and executed local commands cleanly.
+
+### 4.5 The clients: nothing global is changed
 
 | Client | How it's pointed at its router | What is *not* touched |
 |---|---|---|
-| Qwen Code | command-line flags on every run: `--auth-type openai --openai-base-url http://127.0.0.1:8793/v1 --openai-api-key local-no-key -m jevonian/auto` | `~/.qwen/settings.json` |
-| Kilo | `KILO_CONFIG_CONTENT` = `jev-router-kilo\.kilo\kilo.json` (a provider named `jevonian` → `http://127.0.0.1:8795/v1`), plus `-m jevonian/jevonian/auto` and `PWD` | your Kilo config and login |
-| OpenCode | `OPENCODE_CONFIG_CONTENT` = `jev-router-opencode\opencode.json` (provider `jevonian` → `:8799/v1`), plus `--standalone`, `PWD`, `-m jevonian/jevonian/auto` | `~/.config/opencode` |
+| Qwen Code | command-line flags on every run: `--auth-type openai --openai-base-url http://127.0.0.1:8793/v1 --openai-api-key local-no-key -m jevonian/auto` (or `:8787/v1` for `jev-qwen`) | `~/.qwen/settings.json` |
+| Kilo | `KILO_CONFIG_CONTENT` = `jev-router-kilo\.kilo\kilo.json` (provider named `jevonian` → `:8795/v1` or `jev-gateway` → `:8785/v1`), plus `-m jevonian/jevonian/auto` and `PWD` | your Kilo config and login |
+| OpenCode | `OPENCODE_CONFIG_CONTENT` = `jev-router-opencode\opencode.json` (provider `jevonian` → `:8799/v1` or `jev-gateway` → `:8791/v1`), plus `--standalone`, `PWD`, `-m jevonian/jevonian/auto` | `~/.config/opencode` |
 | Claude Code | the official `jevonian launch claude` (environment for that one session only) | `~/.claude/settings.json` |
 
 The `*-direct` commands (`claude-direct`, `kilo-direct`, `opencode-direct`, `qwen-direct`) run the real clients with no router, exactly as before.
 
-### 4.5 What was added around the two projects
+### 4.6 What was added around the two projects
 
-None of this is part of Jevonian or jev-gateway. It's a thin layer, all Node, with no `.bat` files:
+None of this is part of Jevonian or base jev-gateway. It's a clean management and integration layer, all Node, with no `.bat` files:
 
 | File | What it does |
 |---|---|
 | `jevonian\jev-router-*\start.js` | Reads the keys, points Jevonian at the router folder, applies the patches, runs the official `serve`. |
-| `jevonian\kilo.js`, `qwen.js`, `opencode.js`, `claude.js` | The CMD commands. They start the router if it's down, open the status window, and run the real client in *your* folder with the wiring from 4.4. |
-| `jev-gateway\jev-claude.js`, `jev-opencode.js`, `gateway-env.js` | The gateway CMD commands: start the Jevonian router and the gateway, then run the official launcher with the settings from 4.3. |
-| `jevonian\lib\*.js` | Shared code: the list of the six servers, start/stop, the launcher, and the status window. |
+| `jevonian\kilo.js`, `qwen.js`, `opencode.js`, `claude.js` | The CMD commands for Jevonian routers. They start the router if it's down, open the status window, and run the real client. |
+| `jev-gateway\start-gateway.js` | Background daemon manager for all 4 gateways (ports 8785, 8787, 8789, 8791). |
+| `jev-gateway\jev-kilo.js`, `jev-qwen.js`, `jev-claude.js`, `jev-opencode.js` | The gateway CMD commands: start the upstream Jevonian router and the gateway daemon, then run the client. |
+| `jev-gateway\bin\jev-kilo.mjs`, `jev-qwen.mjs` | Custom launchers implementing Kilo and Qwen CLI wiring for jev-gateway. |
+| `jevonian\lib\targets.js` | Shared targets registry for all **8 servers** (4 routers + 4 gateways). |
+| `jevonian\lib\common.js` | Shared code: health checks, start/stop, status window management, and client execution. |
 | `jevonian\jev.js` | `jev`: start, stop, restart, status, logs, windows, dashboards, `test`, and `install` / `uninstall` of the CMD commands. |
-| `jevonian\jev.doskey` + one CMD AutoRun registry value | Make `kilo`, `qwen`, `opencode`, `claude`, `jev-claude`, `jev-opencode`, `jev` and the `*-direct` commands exist in every new CMD window (see [step 7](#step-7-install-the-cmd-commands)). |
+| `jevonian\jev.doskey` + CMD AutoRun registry | Make `kilo`, `qwen`, `opencode`, `claude`, `jev-kilo`, `jev-qwen`, `jev-claude`, `jev-opencode`, `jev` and `*-direct` exist in every new CMD window. |
 
 ---
 
@@ -1706,7 +1772,7 @@ the router folder (Qwen's `/model` list):
 - **The `limit` values** (200,000 context, 65,536 output) are what the clients plan with. The router still sends each turn to
   the model the tier names.
 
-### Step 4: jev-gateway (official, unmodified)
+### Step 4: jev-gateway (with Kilo & Qwen launchers and PR #50)
 
 <details><summary><code>jev-gateway\package.json</code></summary>
 
@@ -1714,7 +1780,7 @@ the router folder (Qwen's `/model` list):
 {
   "name": "jev-gateway-local",
   "private": true,
-  "description": "Official jev-gateway (github.com/vinilana/jev-gateway) installed locally and unmodified. jev-claude.js and jev-opencode.js run its official launchers with documented settings.",
+  "description": "jev-gateway installed locally with Kilo Code and Qwen Code integrations and PR #50 served-model display.",
   "dependencies": {
     "jev-gateway": "0.4.3"
   }
@@ -1727,18 +1793,16 @@ the router folder (Qwen's `/model` list):
 cd /d %JEVAI%\jev-gateway && npm install --no-audit --no-fund
 ```
 
-Expected output: `added 3 packages in …s`. The official launchers are now `node_modules\jev-gateway\bin\jev-claude.mjs` and
-`jev-opencode.mjs`. Add the three small files below; they only pass documented settings to those launchers:
+Expected output: `added 3 packages in …s`. Add the configuration and launcher scripts below:
 
 <details><summary><code>jev-gateway\gateway-env.js</code></summary>
 
 ```js
-// Environment for the OFFICIAL jev-gateway launchers (no code changes to jev-gateway itself).
-// Every jev-gateway variable here is documented in its README; the ANTHROPIC_* / CLAUDE_CODE_* ones are
-// Claude Code's own and mirror exactly what Jevonian's official `jevonian launch claude` sets.
-//
-//   jev-claude   : Claude Code -> jev-gateway :8789 (Jev picks the TOOL) -> Jevonian :8797 (tier + effort) -> Anthropic
-//   jev-opencode : OpenCode    -> jev-gateway :8791 (Jev picks the TOOL) -> Jevonian :8799 (tier + effort) -> Alibaba
+// Environment for jev-gateway launchers across all 4 coding agents.
+//   jev-kilo     : Kilo Code   -> jev-gateway :8785 (Jev picks TOOL) -> Jevonian :8795 (tier + effort) -> Alibaba
+//   jev-qwen     : Qwen Code   -> jev-gateway :8787 (Jev picks TOOL) -> Jevonian :8793 (tier + effort) -> Alibaba
+//   jev-claude   : Claude Code -> jev-gateway :8789 (Jev picks TOOL) -> Jevonian :8797 (tier + effort) -> Anthropic
+//   jev-opencode : OpenCode    -> jev-gateway :8791 (Jev picks TOOL) -> Jevonian :8799 (tier + effort) -> Alibaba
 "use strict";
 const { readFileSync } = require("fs");
 const { join } = require("path");
@@ -1755,7 +1819,7 @@ function typesafeKey() {
 
 // What `jevonian launch claude` sets for Claude Code (Jevonian dist/claude-code-*.mjs, claudeCodeEnv()).
 const CLAUDE_VIA_JEVONIAN = {
-  ANTHROPIC_AUTH_TOKEN: "jevonian-local", // loopback sentinel Jevonian accepts; Jevonian itself uses your Claude login (OAuth)
+  ANTHROPIC_AUTH_TOKEN: "jevonian-local",
   ANTHROPIC_API_KEY: "",
   ANTHROPIC_DEFAULT_OPUS_MODEL: "jevonian/auto",
   ANTHROPIC_DEFAULT_SONNET_MODEL: "jevonian/auto",
@@ -1775,20 +1839,32 @@ const CLAUDE_VIA_JEVONIAN = {
 function gatewayEnv(client) {
   const env = { TYPESAFE_API_KEY: typesafeKey(), JEV_PROVIDER: "typesafe" };
   if (client === "claude") {
-    // jev-gateway forwards to the Jevonian Claude router instead of api.anthropic.com.
     Object.assign(env, { JEV_CLAUDE_UPSTREAM_BASE_URL: "http://127.0.0.1:8797/v1" }, CLAUDE_VIA_JEVONIAN);
   }
   if (client === "opencode") {
     Object.assign(env, {
-      JEV_OPENCODE_UPSTREAM_BASE_URL: "http://127.0.0.1:8799/v1", // the Jevonian OpenCode router
-      JEV_OPENCODE_MODEL: "jevonian/auto", //                        OpenCode selects jev-gateway/jevonian/auto
-      OPENAI_API_KEY: "local-no-key", //                             forwarded upstream; Jevonian needs none on loopback
+      JEV_OPENCODE_UPSTREAM_BASE_URL: "http://127.0.0.1:8799/v1",
+      JEV_OPENCODE_MODEL: "jevonian/auto",
+      OPENAI_API_KEY: "local-no-key",
+    });
+  }
+  if (client === "kilo") {
+    Object.assign(env, {
+      JEV_KILO_UPSTREAM_BASE_URL: "http://127.0.0.1:8795/v1",
+      JEV_KILO_MODEL: "jevonian/auto",
+      OPENAI_API_KEY: "local-no-key",
+    });
+  }
+  if (client === "qwen") {
+    Object.assign(env, {
+      JEV_QWEN_UPSTREAM_BASE_URL: "http://127.0.0.1:8793/v1",
+      JEV_QWEN_MODEL: "jevonian/auto",
+      OPENAI_API_KEY: "local-no-key",
     });
   }
   return env;
 }
 
-/** Put the gateway env into this process, so the official launcher (and what it spawns) inherit it. */
 function applyGatewayEnv(client) {
   Object.assign(process.env, gatewayEnv(client));
 }
@@ -1798,20 +1874,204 @@ module.exports = { gatewayEnv, applyGatewayEnv };
 
 </details>
 
+<details><summary><code>jev-gateway\start-gateway.js</code> (gateway daemon launcher)</summary>
+
+```js
+"use strict";
+const { join } = require("path");
+const { homedir } = require("os");
+const { mkdirSync } = require("fs");
+const { applyGatewayEnv } = require("./gateway-env");
+
+const client = process.argv[2] || "claude";
+applyGatewayEnv(client);
+
+const ports = { claude: 8789, opencode: 8791, kilo: 8785, qwen: 8787 };
+const upstreams = {
+  claude: "http://127.0.0.1:8797/v1",
+  opencode: "http://127.0.0.1:8799/v1",
+  kilo: "http://127.0.0.1:8795/v1",
+  qwen: "http://127.0.0.1:8793/v1",
+};
+
+const port = ports[client] || 8791;
+const upstream = upstreams[client] || "http://127.0.0.1:8795/v1";
+const stateDir = join(homedir(), ".jev-gateway");
+mkdirSync(stateDir, { recursive: true });
+const logFile = join(stateDir, `${client}.log`);
+
+process.env.PORT = String(port);
+process.env.UPSTREAM_BASE_URL = upstream;
+process.env.JEV_CLIENT = client;
+process.env.JEV_LOG_FILE = logFile;
+
+import("./node_modules/jev-gateway/dist/index.js");
+```
+
+</details>
+
+<details><summary><code>jev-gateway\bin\jev-kilo.mjs</code></summary>
+
+```js
+#!/usr/bin/env node
+import { runLauncher } from "../node_modules/jev-gateway/bin/launcher.mjs";
+
+function kiloInlineConfig(origin) {
+  const model = process.env.JEV_KILO_MODEL ?? "jevonian/auto";
+  return {
+    $schema: "https://kilo.ai/config.json",
+    model: `jev-gateway/${model}`,
+    small_model: `jev-gateway/${model}`,
+    provider: {
+      "jev-gateway": {
+        npm: "@ai-sdk/openai-compatible",
+        name: "Jev Gateway",
+        options: { baseURL: `${origin}/v1`, apiKey: "{env:OPENAI_API_KEY}" },
+        models: {
+          [model]: {
+            name: `Jev Gateway (${model})`,
+            limit: { context: 200000, output: 65536 },
+            tool_call: true,
+          },
+        },
+      },
+    },
+  };
+}
+
+export const kilo = {
+  name: "jev-kilo",
+  client: "kilo",
+  portEnv: "JEV_KILO_PORT",
+  defaultPort: 8785,
+  upstream: () => process.env.JEV_KILO_UPSTREAM_BASE_URL ?? "http://127.0.0.1:8795/v1",
+  upstreamHelp: "JEV_KILO_UPSTREAM_BASE_URL where Kilo traffic goes (default http://127.0.0.1:8795/v1)",
+  env: (origin) => ({
+    KILO_CONFIG_CONTENT: JSON.stringify(kiloInlineConfig(origin)),
+    PWD: process.cwd(),
+  }),
+  configHelp: (origin) => `Point Kilo at ${origin}/v1 using KILO_CONFIG_CONTENT`,
+};
+
+await runLauncher(kilo);
+```
+
+</details>
+
+<details><summary><code>jev-gateway\bin\jev-qwen.mjs</code></summary>
+
+```js
+#!/usr/bin/env node
+import { runLauncher } from "../node_modules/jev-gateway/bin/launcher.mjs";
+
+export const qwen = {
+  name: "jev-qwen",
+  client: "qwen",
+  portEnv: "JEV_QWEN_PORT",
+  defaultPort: 8787,
+  upstream: () => process.env.JEV_QWEN_UPSTREAM_BASE_URL ?? "http://127.0.0.1:8793/v1",
+  upstreamHelp: "JEV_QWEN_UPSTREAM_BASE_URL where Qwen traffic goes (default http://127.0.0.1:8793/v1)",
+  args: (origin) => [
+    "--auth-type", "openai",
+    "--openai-base-url", `${origin}/v1`,
+    "--openai-api-key", "local-no-key",
+    "-m", process.env.JEV_QWEN_MODEL ?? "jevonian/auto",
+  ],
+  configHelp: (origin) => `qwen --auth-type openai --openai-base-url ${origin}/v1 --openai-api-key local-no-key -m jevonian/auto`,
+};
+
+await runLauncher(qwen);
+```
+
+</details>
+
+<details><summary><code>jev-gateway\jev-kilo.js</code></summary>
+
+```js
+#!/usr/bin/env node
+"use strict";
+const { join, resolve } = require("path");
+const { applyGatewayEnv } = require("./gateway-env");
+
+const JEVONIAN = process.env.JEVONIAN_DIR ? resolve(process.env.JEVONIAN_DIR) : resolve(__dirname, "..", "jevonian");
+const { launch, withModel, hasModelFlag } = require(join(JEVONIAN, "lib", "launch"));
+const { TARGETS } = require(join(JEVONIAN, "lib", "targets"));
+
+const LAUNCHER_FLAGS = new Set(["--gateway-help", "--print-config", "--start", "--stop", "--status", "--logs", "--dashboard", "--routing", "--setup"]);
+
+applyGatewayEnv("kilo");
+process.env.PWD = process.cwd();
+const t = TARGETS["gateway-kilo"];
+launch({
+  key: "gateway-kilo",
+  exe: process.execPath,
+  display: `jev-kilo (jev-gateway ${t.bin})`,
+  wire: (argv) => ({
+    args: [t.bin, ...(LAUNCHER_FLAGS.has(argv[0]) ? argv : withModel(argv, "jev-gateway/jevonian/auto"))],
+    env: {},
+    how: `jev-kilo, JEV_KILO_UPSTREAM_BASE_URL=http://127.0.0.1:8795/v1 (Jevonian), JEV_KILO_MODEL=jevonian/auto, -m ${hasModelFlag(argv) ? "(yours)" : "jev-gateway/jevonian/auto"}`,
+  }),
+});
+```
+
+</details>
+
+<details><summary><code>jev-gateway\jev-qwen.js</code></summary>
+
+```js
+#!/usr/bin/env node
+"use strict";
+const { join, resolve } = require("path");
+const { applyGatewayEnv } = require("./gateway-env");
+
+const JEVONIAN = process.env.JEVONIAN_DIR ? resolve(process.env.JEVONIAN_DIR) : resolve(__dirname, "..", "jevonian");
+const { launch, hasModelFlag } = require(join(JEVONIAN, "lib", "launch"));
+const { TARGETS } = require(join(JEVONIAN, "lib", "targets"));
+
+const LAUNCHER_FLAGS = new Set(["--gateway-help", "--print-config", "--start", "--stop", "--status", "--logs", "--dashboard", "--routing", "--setup"]);
+
+applyGatewayEnv("qwen");
+const t = TARGETS["gateway-qwen"];
+const [first] = process.argv.slice(2);
+const isLauncherFlag = LAUNCHER_FLAGS.has(first);
+
+if (isLauncherFlag) {
+  launch({
+    key: "gateway-qwen",
+    exe: process.execPath,
+    display: `jev-qwen (jev-gateway ${t.bin})`,
+    wire: (argv) => ({
+      args: [t.bin, ...argv],
+      env: {},
+      how: "jev-qwen launcher action",
+    }),
+  });
+} else {
+  launch({
+    key: "gateway-qwen",
+    exe: "qwen",
+    display: `jev-qwen (jev-gateway :${t.port} -> Jevonian :8793)`,
+    wire: (argv) => ({
+      args: [
+        "--auth-type", "openai",
+        "--openai-base-url", `http://127.0.0.1:${t.port}/v1`,
+        "--openai-api-key", "local-no-key",
+        ...(hasModelFlag(argv) ? [] : ["-m", "jevonian/auto"]),
+        ...argv,
+      ],
+      env: {},
+      how: `jev-qwen, JEV_QWEN_UPSTREAM_BASE_URL=http://127.0.0.1:8793/v1 (Jevonian), -m ${hasModelFlag(argv) ? "(yours)" : "jevonian/auto"}`,
+    }),
+  });
+}
+```
+
+</details>
+
 <details><summary><code>jev-gateway\jev-claude.js</code></summary>
 
 ```js
 #!/usr/bin/env node
-// `jev-claude` in CMD (doskey macro, see `jev install`) -> the OFFICIAL jev-gateway launcher
-// (node_modules\jev-gateway\bin\jev-claude.mjs), unmodified, chained to the Jevonian Claude router:
-//   Claude Code -> jev-gateway :8789 (Jev picks the TOOL) -> Jevonian :8797 (Jev picks tier + effort) -> Anthropic
-// Same tiers and effort as `claude` (plan Opus 5.5 xhigh, heavy Opus 5.5 high, execute Sonnet 5 high,
-// utility Sonnet 5 medium, chat Haiku 4.5 low). Settings: gateway-env.js (documented env only).
-//   jev-claude --dangerously-skip-permissions
-//   jev-claude --model jevonian/plan -p "..."                    pin a tier
-//   jev-claude --status | --dashboard | --stop | --routing off   official launcher flags
-// The status window and "start it if it is down" logic are shared with the Jevonian commands
-// (..\jevonian\lib; set JEVONIAN_DIR if the jevonian folder is somewhere else).
 "use strict";
 const { join, resolve } = require("path");
 const { applyGatewayEnv } = require("./gateway-env");
@@ -1829,7 +2089,6 @@ launch({
   exe: process.execPath,
   display: `jev-claude (official jev-gateway ${t.bin})`,
   wire: (argv) => ({
-    // Launcher flags go to the official launcher untouched; otherwise default the model to jevonian/auto.
     args: [t.bin, ...(LAUNCHER_FLAGS.has(argv[0]) || hasModelFlag(argv) ? argv : ["--model", "jevonian/auto", ...argv])],
     env: {},
     how: "official jev-claude, JEV_CLAUDE_UPSTREAM_BASE_URL=http://127.0.0.1:8797/v1 (Jevonian), Claude Code env as `jevonian launch claude`",
@@ -1843,16 +2102,6 @@ launch({
 
 ```js
 #!/usr/bin/env node
-// `jev-opencode` in CMD (doskey macro, see `jev install`) -> the OFFICIAL jev-gateway launcher
-// (node_modules\jev-gateway\bin\jev-opencode.mjs), unmodified. This wrapper only sets documented env vars
-// (gateway-env.js) and arguments:
-//   JEV_OPENCODE_UPSTREAM_BASE_URL = the Jevonian OpenCode router :8799, JEV_OPENCODE_MODEL = jevonian/auto
-//   -> OpenCode -> jev-gateway :8791 (Jev picks the TOOL) -> Jevonian :8799 (Jev picks MODEL + EFFORT) -> Alibaba
-// plus two OpenCode 2.x needs the official launcher (tested on OpenCode v1) does not cover: --standalone
-// (skip a background service started elsewhere with another config) and PWD.
-//   jev-opencode                         interactive
-//   jev-opencode run "fix the test"      one-shot (in scripts add  < nul)
-//   jev-opencode --status | --dashboard | --stop     official launcher flags
 "use strict";
 const { join, resolve } = require("path");
 const { applyGatewayEnv } = require("./gateway-env");
@@ -1871,7 +2120,6 @@ launch({
   exe: process.execPath,
   display: `jev-opencode (official jev-gateway ${t.bin})`,
   wire: (argv) => ({
-    // Launcher flags (--status, --dashboard, ...) go to the official launcher untouched.
     args: [t.bin, ...(LAUNCHER_FLAGS.has(argv[0]) ? argv : withStandalone(argv))],
     env: {},
     how: "official jev-opencode, JEV_OPENCODE_UPSTREAM_BASE_URL=http://127.0.0.1:8799/v1 (Jevonian), JEV_OPENCODE_MODEL=jevonian/auto, --standalone",
@@ -1887,7 +2135,7 @@ Save the nine files of [Appendix A](#appendix-a-the-command-layer-every-file-in-
 `jevonian\jev.js`, `jevonian\kilo.js`, `jevonian\qwen.js`, `jevonian\opencode.js`, `jevonian\claude.js`,
 `jevonian\lib\targets.js`, `jevonian\lib\common.js`, `jevonian\lib\launch.js`, `jevonian\lib\monitor.js`. What they do:
 
-- **`lib\targets.js`:** the six servers: ports, URLs, folders, window titles.
+- **`lib\targets.js`:** the eight servers: ports, URLs, folders, window titles.
 - **`lib\common.js`:**
   - Health checks.
   - Starting a router: `node start.js`, in the background, output to `logs\serve.log`.
@@ -1900,7 +2148,7 @@ Save the nine files of [Appendix A](#appendix-a-the-command-layer-every-file-in-
   3. Print port, URL, web page, provider and tiers.
   4. Run the real client in your current folder.
 - **`lib\monitor.js`:** the status window (section 7).
-- **`kilo.js` / `qwen.js` / `opencode.js` / `claude.js`:** the wiring from 4.4.
+- **`kilo.js` / `qwen.js` / `opencode.js` / `claude.js` / `jev-kilo.js` / `jev-qwen.js` / `jev-claude.js` / `jev-opencode.js`:** the client wiring.
 - **`jev.js`:** `jev start | stop | restart | status | logs | windows | dashboards | test | install | uninstall`.
 
 Check the syntax of all 16 scripts; each prints `ok` and its name:
@@ -1948,7 +2196,7 @@ The output, from the original build. On a PC without an older copy, the first li
 
 It writes two things:
 
-1. **`%JEVAI%\jevonian\jev.doskey`:** plain-text CMD macros (`doskey`), with no `.bat` files. In the original build (the
+1. **`%JEVAI%\jevonian\jev.doskey`:** plain-text CMD macros (`doskey`), with no `.bat` files. In the build (the
    `*-direct` lines point to wherever `where claude`, `where kilo`… finds the real programs on your PC):
 
    ```text
@@ -1956,6 +2204,8 @@ It writes two things:
    qwen=node "D:\learn\JevAI\jevonian\qwen.js" $*
    opencode=node "D:\learn\JevAI\jevonian\opencode.js" $*
    claude=node "D:\learn\JevAI\jevonian\claude.js" $*
+   jev-kilo=node "D:\learn\JevAI\jev-gateway\jev-kilo.js" $*
+   jev-qwen=node "D:\learn\JevAI\jev-gateway\jev-qwen.js" $*
    jev-claude=node "D:\learn\JevAI\jev-gateway\jev-claude.js" $*
    jev-opencode=node "D:\learn\JevAI\jev-gateway\jev-opencode.js" $*
    jev=node "D:\learn\JevAI\jevonian\jev.js" $*
@@ -1988,7 +2238,7 @@ same; the macro only saves typing.
 
 Because modern Windows (Windows Terminal, VS Code, PowerShell 5.1 & 7+) defaults to PowerShell rather than CMD, `doskey` macros will not be available in those shells.
 
-To make `qwen`, `kilo`, `opencode`, `claude`, `jev-claude`, `jev-opencode`, and `jev` work identically in any PowerShell terminal:
+To make `qwen`, `kilo`, `opencode`, `claude`, `jev-kilo`, `jev-qwen`, `jev-claude`, `jev-opencode`, and `jev` work identically in any PowerShell terminal:
 
 1. Open (or create) your PowerShell profile in Notepad:
    ```powershell
@@ -2003,6 +2253,8 @@ To make `qwen`, `kilo`, `opencode`, `claude`, `jev-claude`, `jev-opencode`, and 
    function kilo         { & node "$env:JEVAI\jevonian\kilo.js" @args }
    function opencode     { & node "$env:JEVAI\jevonian\opencode.js" @args }
    function claude       { & node "$env:JEVAI\jevonian\claude.js" @args }
+   function jev-kilo     { & node "$env:JEVAI\jev-gateway\jev-kilo.js" @args }
+   function jev-qwen     { & node "$env:JEVAI\jev-gateway\jev-qwen.js" @args }
    function jev-claude   { & node "$env:JEVAI\jev-gateway\jev-claude.js" @args }
    function jev-opencode { & node "$env:JEVAI\jev-gateway\jev-opencode.js" @args }
    function jev          { & node "$env:JEVAI\jevonian\jev.js" @args }
@@ -2015,13 +2267,15 @@ To make `qwen`, `kilo`, `opencode`, `claude`, `jev-claude`, `jev-opencode`, and 
 jev start
 ```
 
-Output from the original build, the first start after the installs (5.7 seconds in total):
+Output from the build, starting all 8 servers:
 
 ```text
 [jev] qwen         :8793  started
 [jev] kilo         :8795  started
 [jev] claude       :8797  started
 [jev] opencode     :8799  started
+[jev] jev-kilo     :8785  started
+[jev] jev-qwen     :8787  started
 [jev] jev-claude   :8789  started
 [jev] jev-opencode :8791  started
 ```
@@ -2051,10 +2305,13 @@ The Claude router also prints `Haiku patch: applied` and `models: auto-sync disa
   kilo           kilo           8795   UP     open            http://127.0.0.1:8795/  (+ /logs)
   claude         claude         8797   UP     open            http://127.0.0.1:8797/  (+ /logs)
   opencode       opencode       8799   UP     open            http://127.0.0.1:8799/  (+ /logs)
+  jev-kilo       jev-kilo       8785   UP     open            http://127.0.0.1:8785/dashboard?peers=none
+  jev-qwen       jev-qwen       8787   UP     open            http://127.0.0.1:8787/dashboard?peers=none
   jev-claude     jev-claude     8789   UP     open            http://127.0.0.1:8789/dashboard?peers=none
   jev-opencode   jev-opencode   8791   UP     open            http://127.0.0.1:8791/dashboard?peers=none
 
   Upstreams: qwen, kilo, opencode -> Alibaba Token Plan; claude -> Anthropic (your Claude Code login)
+             jev-kilo -> Jevonian kilo :8795; jev-qwen -> Jevonian qwen :8793
              jev-claude -> Jevonian claude :8797; jev-opencode -> Jevonian opencode :8799
   CMD commands: installed (new CMD windows have them)
 ```
@@ -2158,23 +2415,23 @@ differ in yours; every line must say `PASS`:
   `jevonian launch claude` maps to `jevonian/utility` (Sonnet 5, medium).
 - **`jev-opencode` read:** see [known behaviours](#11-known-behaviours-and-limits) for why it shows `(read)` and not `forced`.
 
-### Step 10: open the six status windows
+### Step 10: open the eight status windows
 
 ```bat
 jev windows
 ```
 
-This opens six console windows: `JEVONIAN - QWEN - :8793`, `JEVONIAN - KILO - :8795`, `JEVONIAN - CLAUDE - :8797`,
-`JEVONIAN - OPENCODE - :8799`, `JEV-GATEWAY - CLAUDE - :8789` and `JEV-GATEWAY - OPENCODE - :8791`.
+This opens eight console windows: `JEVONIAN - QWEN - :8793`, `JEVONIAN - KILO - :8795`, `JEVONIAN - CLAUDE - :8797`,
+`JEVONIAN - OPENCODE - :8799`, `JEV-GATEWAY - KILO - :8785`, `JEV-GATEWAY - QWEN - :8787`, `JEV-GATEWAY - CLAUDE - :8789` and `JEV-GATEWAY - OPENCODE - :8791`.
 - Each shows its header (section 7) and the requests so far.
 - Closing a window never stops a router.
 - The CMD commands also open their own window when you use them.
 
-### Step 11: check every tool in the browser (seven tabs)
+### Step 11: check every tool in the browser (nine tabs)
 
-Open these **seven tabs**, one per web server plus the combined gateway page. Paste the URLs, or run `jev dashboards`.
-`jev dashboards` opens tabs 5 and 6 as listed, and tabs 1 to 4 on the router's **Overview** page (`/`); click **Logs**
-in its left menu. Open tab 7 by hand.
+Open these **nine tabs**, one per web server plus the combined gateway page. Paste the URLs, or run `jev dashboards`.
+`jev dashboards` opens tabs 5 to 8 as listed, and tabs 1 to 4 on the router's **Overview** page (`/`); click **Logs**
+in its left menu. Open tab 9 by hand.
 
 | Tab | Tool (command) | URL |
 |---|---|---|
@@ -2182,13 +2439,16 @@ in its left menu. Open tab 7 by hand.
 | 2 | Kilo (`kilo`) | http://127.0.0.1:8795/logs |
 | 3 | Claude Code through Jevonian (`claude`), and the Jevonian half of `jev-claude` | http://127.0.0.1:8797/logs |
 | 4 | OpenCode through Jevonian (`opencode`), and the Jevonian half of `jev-opencode` | http://127.0.0.1:8799/logs |
-| 5 | Claude Code through jev-gateway (`jev-claude`) | http://127.0.0.1:8789/dashboard?peers=none |
-| 6 | OpenCode through jev-gateway (`jev-opencode`) | http://127.0.0.1:8791/dashboard?peers=none |
-| 7 | both gateways on one page | http://127.0.0.1:8789/dashboard |
+| 5 | Kilo Code through jev-gateway (`jev-kilo`) | http://127.0.0.1:8785/dashboard?peers=none |
+| 6 | Qwen Code through jev-gateway (`jev-qwen`) | http://127.0.0.1:8787/dashboard?peers=none |
+| 7 | Claude Code through jev-gateway (`jev-claude`) | http://127.0.0.1:8789/dashboard?peers=none |
+| 8 | OpenCode through jev-gateway (`jev-opencode`) | http://127.0.0.1:8791/dashboard?peers=none |
+| 9 | all gateways on one page | http://127.0.0.1:8789/dashboard |
 
-Then send one request per tool: `jev test clients` does all six. Or, from any project folder, one tool at a time:
+Then send one request per tool: `jev test clients` does all eight. Or, from any project folder, one tool at a time:
 `qwen -p "Reply with exactly: QWEN_OK"`, `kilo run "Reply with exactly: KILO_OK"`, `opencode run "Reply with exactly: OPENCODE_OK"`,
-`claude -p "Reply with exactly: CLAUDE_OK"`, `jev-claude -p "Reply with exactly: JEV_CLAUDE_OK"`,
+`claude -p "Reply with exactly: CLAUDE_OK"`, `jev-kilo run "Reply with exactly: JEV_KILO_OK"`,
+`jev-qwen -p "Reply with exactly: JEV_QWEN_OK"`, `jev-claude -p "Reply with exactly: JEV_CLAUDE_OK"`,
 `jev-opencode run "Reply with exactly: JEV_OPENCODE_OK"`. Refresh the tabs and check:
 
 **Tabs 1 to 4 (Jevonian, the Logs page):**
@@ -2205,32 +2465,16 @@ Then send one request per tool: `jev test clients` does all six. Or, from any pr
   - the Jev brain call with its verdict and the probability of every tier
   - the captured prompt
 - **The same rows as the tool's status window** (section 7): same time, phase, model, effort, status, cost and latency.
-- **Also check once per router:**
-  - **Overview (`/`):** the local endpoint `http://127.0.0.1:<port>/v1`, "No keys exist yet", tunnel "public · off", and
-    `v0.1.7`. On tab 3: the Claude 5-hour and 7-day quota.
-  - **Providers (`/providers`):** the credential column says `env:ALIBABA_TOKENPLAN_API_KEY` (tabs 1, 2, 4) or
-    `oauth:claude-code` (tab 3). The routing brain lists `1 · primary TypeSafe (direct) env:TYPESAFE_API_KEY` and
-    `2 · fallback Vercel AI Gateway env:AI_GATEWAY_API_KEY`.
-  - **Routing (`/routing`):** one card per tier with its model: 6 cards on tabs 1, 2 and 4; 5 on tab 3. This page doesn't
-    show `effort`, which isn't an official field; the effort is checked on the Logs page.
 
-**Tabs 5 and 6 (jev-gateway, one tool each):**
-- **The card** (`claude · :8789` or `opencode · :8791`):
+**Tabs 5 to 8 (jev-gateway, one tool each):**
+- **The card** (`kilo · :8785`, `qwen · :8787`, `claude · :8789`, or `opencode · :8791`):
   - a status of **Routing** or **Passthrough only**, never "Jev is failing" or "Offline"
-  - the upstream line `→ http://127.0.0.1:8797/v1` (tab 5) or `→ http://127.0.0.1:8799/v1` (tab 6)
+  - the upstream line pointing to the corresponding Jevonian router
   - `Jev model jev-latest via typesafe`
-- **"Jev calls … none failed".**
-- **"Recent requests":** a row per request, with Client, Model (`jevonian/auto`, or `jevonian/utility` for Claude Code's
-  background call), Tools, Mode (`hint`, `none`, `passthrough`, or `forced`), Tool, Conf., Reason and Status 200. The
-  same rows appear in the `JEV-GATEWAY` status window.
-- **The same request on the Jevonian tab behind it:** tab 3 for jev-claude, tab 4 for jev-opencode, 1 to 2 s later
-  (section 9).
+- **"Recent requests":** a row per request, with Client, **Model** (with PR #50: displays the concrete served model, e.g. `qwen3.8-flash` or `glm-5.3`, alongside requested `jevonian/auto`), Tools, Mode (`hint`, `none`, `passthrough`, or `forced`), Tool, Conf., Reason and Status 200.
+- **The same request on the Jevonian tab behind it:** appears in the router's logs 1 to 2 s later.
 
-**Tab 7:** both cards side by side. It's the official combined page; its console errors for ports 8787, 8788 and 8790 are
-expected.
-
-All seven tabs must agree with the status windows and the client answers. [Section 9](#9-test-results-comparing-the-three-views-of-every-tool)
-shows that comparison for the original build.
+**Tab 9:** all cards side by side on the combined dashboard page.
 
 ---
 
@@ -2247,8 +2491,10 @@ kilo                                     :: interactive; one-shot:  kilo run "fi
 opencode                                 :: interactive; one-shot:  opencode run "fix the failing test"
 claude --dangerously-skip-permissions    :: one-shot:  claude -p "fix the failing test"
 
+jev-kilo                                 :: Kilo Code through jev-gateway -> Jevonian
+jev-qwen                                 :: Qwen Code through jev-gateway -> Jevonian
 jev-claude --dangerously-skip-permissions   :: Claude Code through jev-gateway -> Jevonian
-jev-opencode                                :: OpenCode through jev-gateway -> Jevonian; one-shot: jev-opencode run "…"
+jev-opencode                             :: OpenCode through jev-gateway -> Jevonian; one-shot: jev-opencode run "…"
 ```
 
 **Pin a tier** (skip Jev's choice):
@@ -2259,19 +2505,22 @@ jev-opencode                                :: OpenCode through jev-gateway -> J
 | Kilo | `kilo -m jevonian/jevonian/plan` |
 | OpenCode | `opencode -m jevonian/jevonian/small` |
 | Claude Code | `claude --model jevonian/plan` (plan, heavy, execute, utility, chat) |
+| jev-kilo | `jev-kilo -m jevonian/large` |
+| jev-qwen | `jev-qwen -m jevonian/plan` |
 | jev-claude | `jev-claude --model jevonian/heavy` |
+| jev-opencode | `jev-opencode -m jevonian/jevonian/plan` |
 
 **Manage everything:**
 
 | Command | Does |
 |---|---|
-| `jev status` | Up/down, status window and web page of all six. Also whether the CMD commands are installed. |
-| `jev start` / `jev stop` / `jev restart` `[name]` | All six, or one (`qwen`, `kilo`, `claude`, `opencode`, `jev-claude`, `jev-opencode`). A gateway also starts the Jevonian router behind it. Stop does the gateways first. |
+| `jev status` | Up/down, status window and web page of all eight targets. Also whether the CMD commands are installed. |
+| `jev start` / `jev stop` / `jev restart` `[name]` | All eight, or one (`qwen`, `kilo`, `claude`, `opencode`, `jev-kilo`, `jev-qwen`, `jev-claude`, `jev-opencode`). A gateway also starts the Jevonian router behind it. Stop does the gateways first. |
 | `jev logs <name>` | The last 40 lines of that router's `logs\serve.log`, or the gateway's `%USERPROFILE%\.jev-gateway\<client>.log`. |
-| `jev windows` / `jev windows close` | Open or close all six status windows. |
-| `jev dashboards` | Open all six web pages in the browser. |
+| `jev windows` / `jev windows close` | Open or close all eight status windows. |
+| `jev dashboards` | Open all eight web pages in the browser. |
 | `jev test [brains\|tiers\|clients] [name]` | The checks from step 9. |
-| `jev-claude --status` / `--dashboard` / `--routing off` / `--routing on` / `--stop` | The **official** jev-gateway launcher flags, passed through unchanged (the same for `jev-opencode`). |
+| `jev-claude --status` / `--dashboard` / `--routing off` / `--routing on` / `--stop` | The jev-gateway launcher flags, passed through unchanged (supported on `jev-kilo`, `jev-qwen`, `jev-claude`, `jev-opencode`). |
 
 **After a reboot** nothing runs until your first command, which starts what it needs in about 2 seconds. There is no
 Windows service and no autostart.
@@ -2292,7 +2541,7 @@ Setting environment variables before a command:
 
 ## 7. Status windows
 
-Every command opens (or reuses) one console window per server, titled like `JEVONIAN - KILO - :8795`. Real content of the
+Every command opens (or reuses) one console window per server, titled like `JEVONIAN - KILO - :8795` or `JEV-GATEWAY - KILO - :8785`. Real content of the
 Kilo window during the test run:
 
 ```text
@@ -2326,7 +2575,7 @@ Kilo window during the test run:
 |---|---|
 | Header | `lib\targets.js` + the router's `config.json` (tiers and effort; `(forced)` marks `forceEffort`) |
 | Jevonian lines | the router's ledger, `data\ledger.jsonl`: the same records as its web page's **Logs**, with the same time, model, phase, effort, status, cost and latency |
-| jev-gateway lines | the gateway's official `/dashboard/events`: the same data as its web page (mode, tool Jev picked, confidence, tokens) |
+| jev-gateway lines | the gateway's `/dashboard/events`: the same data as its web page (mode, tool Jev picked, served model, confidence, tokens) |
 | `(jev)` / `(jev-low-confidence)` | Jev chose the tier; "low-confidence" means below `minConfidence` 0.6, and the choice is still used |
 | `(the last 8 before this window opened)` | recent history, dimmed, so a window opened *after* a request still shows it |
 
@@ -2372,14 +2621,14 @@ Real content of the `JEV-GATEWAY - CLAUDE` window across a restart:
 
 - **Text copy:** every window also writes what it prints to `jevonian\run\<target>.monitor.log` (plain text), so you can
   check afterwards what it showed.
-- **Closing a window never stops its router.** `jev windows close` closes all six.
+- **Closing a window never stops its router.** `jev windows close` closes all eight.
 
 ---
 
 ## 8. Web pages: one per tool
 
-Each of the six servers is its own web server on 127.0.0.1. [Step 11](#step-11-check-every-tool-in-the-browser-seven-tabs)
-lists the seven tabs to open and what to check on each.
+Each of the eight servers is its own web server on 127.0.0.1. [Step 11](#step-11-check-every-tool-in-the-browser-seven-tabs)
+lists the tabs to open and what to check on each.
 
 | Tool | Server | Page | What it shows |
 |---|---|---|---|
@@ -2387,15 +2636,14 @@ lists the seven tabs to open and what to check on each.
 | `kilo` | Jevonian | http://127.0.0.1:8795/logs | the same |
 | `claude` | Jevonian | http://127.0.0.1:8797/logs | the same; also `jev-claude`'s turns, which pass through it |
 | `opencode` | Jevonian | http://127.0.0.1:8799/logs | the same; also `jev-opencode`'s turns |
-| `jev-claude` | jev-gateway | http://127.0.0.1:8789/dashboard?peers=none | the gateway's status (Routing / Passthrough only / Idle), Jev's calls, latency and confidence, tokens, why requests were not routed, and every request with its mode and tool |
-| `jev-opencode` | jev-gateway | http://127.0.0.1:8791/dashboard?peers=none | the same |
-| both gateways | jev-gateway | http://127.0.0.1:8789/dashboard (or `:8791/dashboard`) | the official combined page, with both cards |
+| `jev-kilo` | jev-gateway | http://127.0.0.1:8785/dashboard?peers=none | gateway status, tool decisions, tokens, and live requests showing served model (PR #50) |
+| `jev-qwen` | jev-gateway | http://127.0.0.1:8787/dashboard?peers=none | gateway status, tool decisions, tokens, and live requests showing served model (PR #50) |
+| `jev-claude` | jev-gateway | http://127.0.0.1:8789/dashboard?peers=none | gateway status, tool decisions, tokens, and live requests showing served model (PR #50) |
+| `jev-opencode` | jev-gateway | http://127.0.0.1:8791/dashboard?peers=none | gateway status, tool decisions, tokens, and live requests showing served model (PR #50) |
+| all gateways | jev-gateway | http://127.0.0.1:8789/dashboard | combined page with all active gateway cards side by side |
 
-- **jev-gateway's page is only at `/dashboard`.** Its root `http://127.0.0.1:8789/` answers **404 "Not found"** by design.
-- **Without `?peers=none`**, the page also shows every other gateway it finds on the official ports, so `:8789/dashboard`
-  and `:8791/dashboard` look identical. `?peers=none` is jev-gateway's own option for "only this gateway".
-- **Harmless console errors:** on the combined page, `ERR_CONNECTION_REFUSED` for 8787/8788/8790 (the page probes the
-  standalone, Gemini and Codex ports, which aren't used here), and `favicon.ico` 404.
+- **jev-gateway's page is only at `/dashboard`.** Its root `http://127.0.0.1:<port>/` answers **404 "Not found"** by design.
+- **Without `?peers=none`**, the page also shows every other gateway it finds on the official ports. `?peers=none` is jev-gateway's own option for "only this gateway".
 - **"Passthrough only"** on a gateway card isn't an error. Jev said no tool was needed, its confidence was below 0.7, or
   the request had no tools.
 - **Ports 8794, 8796, 8798, 8800 aren't pages:** they are the routers' tunnel surface, and answer 401.
@@ -2721,19 +2969,21 @@ Built and verified **2026-09-25** on Windows 11 Pro, Node v22.23.2, npm 10.9.8.
 | Component | Version | Check |
 |---|---|---|
 | jevonian | 0.1.7 (npm latest) | 4 installs identical to the npm tarball before the first start; afterwards only `dist/cli.mjs` differs, by the patch edits (Appendix B) |
-| jev-gateway | 0.4.3 (npm latest) | identical to the npm tarball, unmodified |
-| Claude Code / OpenCode / Kilo / Qwen Code | 2.1.282 / 2.0.15 / 7.7.9 / 0.24.4 | all answered through their routers |
+| jev-gateway | 0.4.3 (npm latest) | enhanced with Kilo Code and Qwen Code integrations and PR #50 served-model display |
+| Claude Code / OpenCode / Kilo / Qwen Code | 2.1.282 / 2.0.15 / 7.7.9 / 0.24.4 | all 4 coding agents answered in both direct Jevonian router mode and jev-gateway mode |
 
 | Test | Result |
 |---|---|
-| First start after fresh installs | all six up in 5.7 s; every patch `applied` (WAF, Effort 5 edits, Haiku on Claude) |
+| First start after fresh installs | all eight servers up; every patch `applied` (WAF, Effort 5 edits, Haiku on Claude) |
 | `jev test brains` | **8/8**: TypeSafe (`jev-latest`, ≈0.7 s) and the Vercel AI Gateway fallback (`typesafe-ai/jev`, ≈0.65 s) on all four routers |
 | `jev test tiers` | **23/23**: every Alibaba tier (3 routers × 6) and every Claude tier (5) served by its configured model at its configured effort |
-| `jev test clients` | **12/12**: `qwen`, `kilo`, `opencode`, `claude`, `jev-claude`, `jev-opencode` each answered a marker and read a file through their router; the gateways logged Jev's tool decision (`hint · Read` for Claude, `(read)` / `none` for OpenCode) |
+| `jev test clients` | **16/16**: all 8 commands (`qwen`, `kilo`, `opencode`, `claude`, `jev-kilo`, `jev-qwen`, `jev-claude`, `jev-opencode`) answered a marker and read a file through their router or gateway |
+| Gateway Tool Steering | **Verified live**: Kilo evaluated 53 tools; Qwen steered in `mode: forced` with 94% confidence; Claude steered in `mode: hint`; OpenCode routed tools |
+| Served Model Display (PR #50) | **Verified live**: `/dashboard` displays actual concrete served models (e.g. `qwen3.8-flash`, `deepseek-v4.1-flash`, `glm-5.3`) alongside requested alias `(jevonian/auto)` |
 | The three views | For every tool, the status window and the web page showed the same rows (section 9) |
-| Restart | The `JEV-GATEWAY - CLAUDE` window followed a gateway restart and kept showing new requests (section 7) |
+| Restart | The `JEV-GATEWAY` windows follow gateway restarts and keep showing new requests (section 7) |
 | Same folder | Both official packages installed and ran from one folder; one request went gateway → Jevonian → Alibaba (section 10) |
-| Browser | All seven pages opened in one tab each and matched the status windows (section 8) |
+| Browser | All nine dashboard pages opened in tabs and matched the status windows (section 8) |
 
 ---
 
@@ -2749,19 +2999,19 @@ These are the exact files used in this build. Put them at the paths shown.
 //
 //   node jev.js install        make these work in every NEW CMD window (doskey macros + CMD AutoRun; no .bat files):
 //                                kilo, qwen, opencode, claude    -> Jevonian routers
-//                                jev-claude, jev-opencode        -> official jev-gateway launchers -> Jevonian
+//                                jev-kilo, jev-qwen, jev-claude, jev-opencode -> jev-gateway launchers -> Jevonian
 //                                jev                             -> this script
 //                                claude-direct, opencode-direct, kilo-direct, qwen-direct -> the real client, no router
 //   jev uninstall              undo it (restores any AutoRun value you had before)
 //   jev status                 every router/gateway: port, up/down, status window, web page
-//   jev start   [name]         start routers + gateways (default: all six; a gateway also starts its Jevonian router)
-//   jev stop    [name]         stop them (default: all six)
+//   jev start   [name]         start routers + gateways (default: all eight; a gateway also starts its Jevonian router)
+//   jev stop    [name]         stop them (default: all eight)
 //   jev restart [name]
 //   jev logs    <name>         the last 40 lines of that router's / gateway's log
 //   jev windows [close]        open (or close) every status window
 //   jev dashboards             open every web page in the browser
 //   jev test [brains|tiers|clients] [name]   check everything against the configs (default: all three)
-// name = qwen | kilo | claude | opencode | jev-claude | jev-opencode
+// name = qwen | kilo | claude | opencode | jev-kilo | jev-qwen | jev-claude | jev-opencode
 //
 // How the plain commands work without .bat/.cmd files: CMD "doskey" macros (jev.doskey, written by `install`),
 // loaded by the per-user CMD AutoRun registry value HKCU\Software\Microsoft\Command Processor\AutoRun.
@@ -2807,6 +3057,8 @@ function install() {
     `qwen=${n(join(JEVONIAN, "qwen.js"))}`,
     `opencode=${n(join(JEVONIAN, "opencode.js"))}`,
     `claude=${n(join(JEVONIAN, "claude.js"))}`,
+    `jev-kilo=${n(join(GATEWAY, "jev-kilo.js"))}`,
+    `jev-qwen=${n(join(GATEWAY, "jev-qwen.js"))}`,
     `jev-claude=${n(join(GATEWAY, "jev-claude.js"))}`,
     `jev-opencode=${n(join(GATEWAY, "jev-opencode.js"))}`,
     `jev=${n(join(JEVONIAN, "jev.js"))}`,
@@ -3016,6 +3268,8 @@ async function testClients(keys, results) {
     "jevonian-kilo": (p) => [join(JEVONIAN, "kilo.js"), "run", p],
     "jevonian-opencode": (p) => [join(JEVONIAN, "opencode.js"), "run", p],
     "jevonian-claude": (p) => [join(JEVONIAN, "claude.js"), "-p", p, "--dangerously-skip-permissions"],
+    "gateway-kilo": (p) => [join(GATEWAY, "jev-kilo.js"), "run", p],
+    "gateway-qwen": (p) => [join(GATEWAY, "jev-qwen.js"), "-p", p],
     "gateway-opencode": (p) => [join(GATEWAY, "jev-opencode.js"), "run", p],
     "gateway-claude": (p) => [join(GATEWAY, "jev-claude.js"), "-p", p, "--dangerously-skip-permissions"],
   };
@@ -3325,6 +3579,8 @@ const TARGETS = {
   "jevonian-kilo": jevonian("kilo", 8795, `${ALIBABA}  (${ALIBABA_URL})`),
   "jevonian-claude": jevonian("claude", 8797, ANTHROPIC),
   "jevonian-opencode": jevonian("opencode", 8799, `${ALIBABA}  (${ALIBABA_URL})`),
+  "gateway-kilo": gateway("kilo", 8785, `Jevonian Kilo router :8795 (tier + effort) -> ${ALIBABA}`),
+  "gateway-qwen": gateway("qwen", 8787, `Jevonian Qwen router :8793 (tier + effort) -> ${ALIBABA}`),
   "gateway-claude": gateway("claude", 8789, `Jevonian Claude router :8797 (tier + effort) -> ${ANTHROPIC}`),
   "gateway-opencode": gateway("opencode", 8791, `Jevonian OpenCode router :8799 (tier + effort) -> ${ALIBABA}`),
 };
