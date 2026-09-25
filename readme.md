@@ -61,7 +61,7 @@ Verified on 2026-09-25 (see [Proof of working](#15-proof-of-working)):
 Two sibling folders, each holding one official project, installed locally (no `npm -g`), plus small scripts around them:
 
 ```text
-D:\learn\JevAI\
+%JEVAI%\                           (D:\learn\JevAI in the original build; see step 0)
 ├─ jevonian\                       Jevonian: 4 routers, one per tool, and the CMD commands
 │  ├─ jev.js                       `jev`: start | stop | restart | status | test | logs | windows | dashboards | install | uninstall
 │  ├─ kilo.js  qwen.js  opencode.js  claude.js     the CMD commands for the four tools (through Jevonian)
@@ -218,7 +218,7 @@ Claude Code must be logged in with a **Claude Pro or Max** account. Run `claude`
 router uses that login and has no API key of its own.
 
 **Free ports:** 8789, 8791 (jev-gateway) and 8793 to 8800 (Jevonian: each router uses its port and port+1). Check with
-`netstat -ano | findstr ":879 :880"`. Nothing should be listening yet.
+`netstat -ano | findstr LISTENING | findstr ":878 :879 :880"`: it must print nothing (see [step 0](#step-0-choose-the-root-folder-and-stop-any-other-copy)).
 
 ---
 
@@ -276,7 +276,7 @@ The exact source of each script is in [step 3](#step-3-the-four-jevonian-routers
 
 | Topic | Official jev-gateway 0.4.3 | This setup | Why |
 |---|---|---|---|
-| Install | `npm install -g jev-gateway` | `npm install` in `D:\learn\JevAI\jev-gateway`, `"jev-gateway": "0.4.3"` | No global installs. |
+| Install | `npm install -g jev-gateway` | `npm install` in `%JEVAI%\jev-gateway`, `"jev-gateway": "0.4.3"` | No global installs. |
 | Launchers | `jev-claude`, `jev-opencode` on `PATH` | the same official `node_modules\jev-gateway\bin\jev-claude.mjs` / `jev-opencode.mjs`, run by our `jev-claude.js` / `jev-opencode.js` (CMD macros) | They start the Jevonian router first and open a status window. |
 | Jev key | asked on first run, saved to `~/.jev-gateway/.env` (`--setup`) | `TYPESAFE_API_KEY` from `jev-gateway\credentials\typesafe-ai-credential.txt` and `JEV_PROVIDER=typesafe`, as environment variables | Documented variables. No prompt, and the key stays in the folder. |
 | Claude Code upstream | `https://api.anthropic.com/v1` | `JEV_CLAUDE_UPSTREAM_BASE_URL=http://127.0.0.1:8797/v1` (the Jevonian Claude router) | Tier and effort for jev-claude too. |
@@ -316,21 +316,51 @@ None of this is part of Jevonian or jev-gateway. It's a thin layer, all Node, wi
 
 ## 5. Build it, step by step
 
-Every command below is for **CMD**. `D:\learn\JevAI` is the folder used here. Another folder works too:
-- The scripts find everything relative to themselves.
-- The only absolute paths are the ones `jev install` writes into `jev.doskey`.
-- The two folders must stay siblings (`…\jevonian` and `…\jev-gateway`), or set `JEV_GATEWAY_DIR` / `JEVONIAN_DIR`.
+Every command below is for **CMD**. You pick **one root folder** at the start; all commands use it through the variable
+`%JEVAI%`, so nothing in this guide needs editing:
+- **Paths:** the scripts find everything relative to themselves. The only absolute paths are the ones `jev install` writes
+  into `jev.doskey`.
+- **Siblings:** the two folders must stay siblings (`%JEVAI%\jevonian` and `%JEVAI%\jev-gateway`).
+
+The original build used `D:\learn\JevAI`. Outputs quoted below come from it, so their paths show that folder.
+
+### Step 0: choose the root folder, and stop any other copy
+
+In the CMD window you use for steps 1 to 7 (set it again if you open another window before step 7):
+
+```bat
+set JEVAI=D:\learn\JevAI
+```
+
+**If another copy of this setup is already installed on this PC**, stop it first, **in a CMD window of the old copy**. Both
+copies use the same ports and the same `%USERPROFILE%\.jev-gateway` files:
+
+```bat
+jev stop
+jev windows close
+```
+
+If you skip this, `jev start` finds the old routers answering on the ports and doesn't start the new ones.
+
+Then make sure nothing listens on the ports:
+
+```bat
+netstat -ano | findstr LISTENING | findstr ":878 :879 :880"
+```
+
+It must print nothing. Lines in states like `TIME_WAIT`, from connections that just closed, don't matter; that's why the
+command filters on `LISTENING`.
 
 ### Step 1: create the folders
 
 ```bat
-mkdir D:\learn\JevAI\jevonian\credentials
-mkdir D:\learn\JevAI\jevonian\lib
-mkdir D:\learn\JevAI\jevonian\jev-router-qwen\config     D:\learn\JevAI\jevonian\jev-router-qwen\.qwen
-mkdir D:\learn\JevAI\jevonian\jev-router-kilo\config     D:\learn\JevAI\jevonian\jev-router-kilo\.kilo
-mkdir D:\learn\JevAI\jevonian\jev-router-claude\config
-mkdir D:\learn\JevAI\jevonian\jev-router-opencode\config
-mkdir D:\learn\JevAI\jev-gateway\credentials
+mkdir %JEVAI%\jevonian\credentials
+mkdir %JEVAI%\jevonian\lib
+mkdir %JEVAI%\jevonian\jev-router-qwen\config     %JEVAI%\jevonian\jev-router-qwen\.qwen
+mkdir %JEVAI%\jevonian\jev-router-kilo\config     %JEVAI%\jevonian\jev-router-kilo\.kilo
+mkdir %JEVAI%\jevonian\jev-router-claude\config
+mkdir %JEVAI%\jevonian\jev-router-opencode\config
+mkdir %JEVAI%\jev-gateway\credentials
 ```
 
 ### Step 2: the key files
@@ -338,10 +368,10 @@ mkdir D:\learn\JevAI\jev-gateway\credentials
 Create them with Notepad, so the keys never land in your shell history:
 
 ```bat
-notepad D:\learn\JevAI\jevonian\credentials\qwen-alibaba-credential.txt
-notepad D:\learn\JevAI\jevonian\credentials\typesafe-ai-credential.txt
-notepad D:\learn\JevAI\jevonian\credentials\vercel-ai-gateway-credential.txt
-notepad D:\learn\JevAI\jev-gateway\credentials\typesafe-ai-credential.txt
+notepad %JEVAI%\jevonian\credentials\qwen-alibaba-credential.txt
+notepad %JEVAI%\jevonian\credentials\typesafe-ai-credential.txt
+notepad %JEVAI%\jevonian\credentials\vercel-ai-gateway-credential.txt
+notepad %JEVAI%\jev-gateway\credentials\typesafe-ai-credential.txt
 ```
 
 | File | Content |
@@ -350,12 +380,37 @@ notepad D:\learn\JevAI\jev-gateway\credentials\typesafe-ai-credential.txt
 | `typesafe-ai-credential.txt` (both copies) | the TypeSafe key alone |
 | `vercel-ai-gateway-credential.txt` | the Vercel AI Gateway key alone |
 
+If you already have these four files from an earlier copy of this setup, copy them instead. `OLD` is that copy's root:
+
+```bat
+set OLD=D:\path\to\the\old\root
+copy "%OLD%\jevonian\credentials\*.txt" "%JEVAI%\jevonian\credentials\"
+copy "%OLD%\jev-gateway\credentials\typesafe-ai-credential.txt" "%JEVAI%\jev-gateway\credentials\"
+```
+
 ### Step 3: the four Jevonian routers
 
 Each router folder is self-contained: its own `package.json`, its own copy of the official package, config, patches and data.
+Every file shown in a box below goes to the path in its title, relative to `%JEVAI%`.
 
-**3a. `package.json` and the official package.** One `package.json` per router, with the router's name in `"name"`.
-This is Kilo's:
+**3a. `package.json` in each router folder.** Each pins `"jevonian": "0.1.7"`, exact, with no `^`:
+
+<details><summary><code>jevonian\jev-router-qwen\package.json</code></summary>
+
+```json
+{
+  "name": "jev-router-qwen",
+  "version": "1.0.0",
+  "description": "Self-contained Jevonian router + Qwen Code config",
+  "dependencies": {
+    "jevonian": "0.1.7"
+  }
+}
+```
+
+</details>
+
+<details><summary><code>jevonian\jev-router-kilo\package.json</code></summary>
 
 ```json
 {
@@ -368,28 +423,373 @@ This is Kilo's:
 }
 ```
 
-(The others: `"name": "jev-router-qwen"`, `"jev-router-claude"`, `"jev-router-opencode"`; `"jevonian": "0.1.7"` in all four,
-exact, with no `^`.)
+</details>
 
-```bat
-cd /d D:\learn\JevAI\jevonian\jev-router-qwen      && npm install --no-audit --no-fund
-cd /d D:\learn\JevAI\jevonian\jev-router-kilo      && npm install --no-audit --no-fund
-cd /d D:\learn\JevAI\jevonian\jev-router-claude    && npm install --no-audit --no-fund
-cd /d D:\learn\JevAI\jevonian\jev-router-opencode  && npm install --no-audit --no-fund
+<details><summary><code>jevonian\jev-router-claude\package.json</code></summary>
+
+```json
+{
+  "name": "jev-router-claude",
+  "version": "1.0.0",
+  "description": "Self-contained Jevonian router for Claude Code (claude.ai subscription via OAuth)",
+  "dependencies": {
+    "jevonian": "0.1.7"
+  }
+}
 ```
 
-Expected output, each time: `added 15 packages in 2s`. `node_modules\jevonian\package.json` should say `"version": "0.1.7"`.
+</details>
 
-**3b. `config\config.json`: providers, tiers, effort, brains.** The three Alibaba routers use the same file, except for
-`"port"`: qwen **8793**, kilo **8795**, opencode **8799**. This is the Qwen router's:
+<details><summary><code>jevonian\jev-router-opencode\package.json</code></summary>
 
-<details><summary><code>jevonian\jev-router-qwen\config\config.json</code> (kilo: port 8795, opencode: port 8799, otherwise identical)</summary>
+```json
+{
+  "name": "jev-router-opencode",
+  "version": "1.0.0",
+  "description": "Self-contained Jevonian router + OpenCode config",
+  "dependencies": {
+    "jevonian": "0.1.7"
+  }
+}
+```
+
+</details>
+
+Then install the official package in each (about 2 seconds each):
+
+```bat
+cd /d %JEVAI%\jevonian\jev-router-qwen      && npm install --no-audit --no-fund
+cd /d %JEVAI%\jevonian\jev-router-kilo      && npm install --no-audit --no-fund
+cd /d %JEVAI%\jevonian\jev-router-claude    && npm install --no-audit --no-fund
+cd /d %JEVAI%\jevonian\jev-router-opencode  && npm install --no-audit --no-fund
+```
+
+Expected output, each time: `added 15 packages in …s`. `node_modules\jevonian\package.json` should say `"version": "0.1.7"`.
+
+**3b. `config\config.json`: providers, tiers, effort, brains.** The three Alibaba routers differ only in `"port"`
+(qwen 8793, kilo 8795, opencode 8799):
+
+<details><summary><code>jevonian\jev-router-qwen\config\config.json</code></summary>
 
 ```json
 {
   "listen": {
     "host": "127.0.0.1",
     "port": 8793
+  },
+  "defaultProvider": "alibaba-tokenplan",
+  "providers": [
+    {
+      "name": "alibaba-tokenplan",
+      "type": "openai",
+      "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+      "apiKeyEnv": "ALIBABA_TOKENPLAN_API_KEY",
+      "billing": "subscription",
+      "models": [
+        "deepseek-v4.1-flash",
+        "qwen3.8-flash",
+        "qwen3.7-plus",
+        "glm-5.3",
+        "qwen3.8-max"
+      ]
+    }
+  ],
+  "routing": {
+    "mode": "auto",
+    "routings": [
+      {
+        "id": "plan",
+        "label": "Plan",
+        "description": "architecture, design, multi-file planning, hard reasoning before code",
+        "models": [
+          "glm-5.3"
+        ],
+        "effort": "high"
+      },
+      {
+        "id": "execute",
+        "label": "Medium task",
+        "description": "typical implementation or debugging across a few files, tool loops",
+        "models": [
+          "qwen3.8-flash"
+        ],
+        "effort": "high"
+      },
+      {
+        "id": "utility",
+        "label": "Utility",
+        "description": "summaries, lookups, small mechanical edits",
+        "models": [
+          "qwen3.7-plus"
+        ],
+        "effort": "medium"
+      },
+      {
+        "id": "chat",
+        "label": "Chat",
+        "description": "short conversational replies, acknowledgements",
+        "models": [
+          "deepseek-v4.1-flash"
+        ],
+        "effort": "low"
+      },
+      {
+        "id": "small",
+        "label": "Small task",
+        "description": "a small, well-scoped change: one file or a few lines, a quick fix or single command",
+        "models": [
+          "qwen3.8-flash"
+        ],
+        "effort": "low"
+      },
+      {
+        "id": "large",
+        "label": "Large task",
+        "description": "large or heavy work: big multi-file changes, hard debugging, maximum reasoning",
+        "models": [
+          "qwen3.8-max"
+        ],
+        "effort": "xhigh"
+      }
+    ],
+    "sessionTtlMinutes": 720,
+    "baselineModel": "glm-5.3",
+    "brainPicksEffort": false,
+    "capacities": {
+      "qwen3.8-flash": {
+        "contextWindow": 983616,
+        "maxOutput": 65536,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "qwen3.7-plus": {
+        "contextWindow": 983616,
+        "maxOutput": 65536,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "glm-5.3": {
+        "contextWindow": 200000,
+        "maxOutput": 65536,
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ]
+      },
+      "deepseek-v4.1-flash": {
+        "contextWindow": 1000000,
+        "maxOutput": 65536,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "qwen3.8-max": {
+        "contextWindow": 983616,
+        "maxOutput": 65536,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    "brains": [
+      {
+        "channel": "typesafe",
+        "apiKeyEnv": "TYPESAFE_API_KEY",
+        "minConfidence": 0.6,
+        "timeoutMs": 8000
+      },
+      {
+        "channel": "vercel",
+        "apiKeyEnv": "AI_GATEWAY_API_KEY",
+        "minConfidence": 0.6,
+        "timeoutMs": 20000
+      }
+    ]
+  }
+}
+```
+
+</details>
+
+<details><summary><code>jevonian\jev-router-kilo\config\config.json</code></summary>
+
+```json
+{
+  "listen": {
+    "host": "127.0.0.1",
+    "port": 8795
+  },
+  "defaultProvider": "alibaba-tokenplan",
+  "providers": [
+    {
+      "name": "alibaba-tokenplan",
+      "type": "openai",
+      "baseUrl": "https://token-plan.ap-southeast-1.maas.aliyuncs.com/compatible-mode/v1",
+      "apiKeyEnv": "ALIBABA_TOKENPLAN_API_KEY",
+      "billing": "subscription",
+      "models": [
+        "deepseek-v4.1-flash",
+        "qwen3.8-flash",
+        "qwen3.7-plus",
+        "glm-5.3",
+        "qwen3.8-max"
+      ]
+    }
+  ],
+  "routing": {
+    "mode": "auto",
+    "routings": [
+      {
+        "id": "plan",
+        "label": "Plan",
+        "description": "architecture, design, multi-file planning, hard reasoning before code",
+        "models": [
+          "glm-5.3"
+        ],
+        "effort": "high"
+      },
+      {
+        "id": "execute",
+        "label": "Medium task",
+        "description": "typical implementation or debugging across a few files, tool loops",
+        "models": [
+          "qwen3.8-flash"
+        ],
+        "effort": "high"
+      },
+      {
+        "id": "utility",
+        "label": "Utility",
+        "description": "summaries, lookups, small mechanical edits",
+        "models": [
+          "qwen3.7-plus"
+        ],
+        "effort": "medium"
+      },
+      {
+        "id": "chat",
+        "label": "Chat",
+        "description": "short conversational replies, acknowledgements",
+        "models": [
+          "deepseek-v4.1-flash"
+        ],
+        "effort": "low"
+      },
+      {
+        "id": "small",
+        "label": "Small task",
+        "description": "a small, well-scoped change: one file or a few lines, a quick fix or single command",
+        "models": [
+          "qwen3.8-flash"
+        ],
+        "effort": "low"
+      },
+      {
+        "id": "large",
+        "label": "Large task",
+        "description": "large or heavy work: big multi-file changes, hard debugging, maximum reasoning",
+        "models": [
+          "qwen3.8-max"
+        ],
+        "effort": "xhigh"
+      }
+    ],
+    "sessionTtlMinutes": 720,
+    "baselineModel": "glm-5.3",
+    "brainPicksEffort": false,
+    "capacities": {
+      "qwen3.8-flash": {
+        "contextWindow": 983616,
+        "maxOutput": 65536,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "qwen3.7-plus": {
+        "contextWindow": 983616,
+        "maxOutput": 65536,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "glm-5.3": {
+        "contextWindow": 200000,
+        "maxOutput": 65536,
+        "efforts": [
+          "low",
+          "high",
+          "max"
+        ]
+      },
+      "deepseek-v4.1-flash": {
+        "contextWindow": 1000000,
+        "maxOutput": 65536,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      },
+      "qwen3.8-max": {
+        "contextWindow": 983616,
+        "maxOutput": 65536,
+        "efforts": [
+          "low",
+          "medium",
+          "high",
+          "xhigh"
+        ]
+      }
+    },
+    "brains": [
+      {
+        "channel": "typesafe",
+        "apiKeyEnv": "TYPESAFE_API_KEY",
+        "minConfidence": 0.6,
+        "timeoutMs": 8000
+      },
+      {
+        "channel": "vercel",
+        "apiKeyEnv": "AI_GATEWAY_API_KEY",
+        "minConfidence": 0.6,
+        "timeoutMs": 20000
+      }
+    ]
+  }
+}
+```
+
+</details>
+
+<details><summary><code>jevonian\jev-router-opencode\config\config.json</code></summary>
+
+```json
+{
+  "listen": {
+    "host": "127.0.0.1",
+    "port": 8799
   },
   "defaultProvider": "alibaba-tokenplan",
   "providers": [
@@ -723,12 +1123,12 @@ What the fields mean (all official Jevonian fields except `effort` and `forceEff
 | `capacities` | Context window, max output, and the effort levels each model accepts. A route's effort is clamped to these. |
 | `brains[]` | TypeSafe first, Vercel only if TypeSafe fails. `minConfidence` 0.6: below it the pick is still used, but marked `jev-low-confidence`. |
 | `sessionTtlMinutes`, `baselineModel`, `quotaGuard` | Session stickiness, the savings baseline, and skipping providers that ran out of quota. |
-| `tunnel`, `modelSync` (Claude) | Tunnel off. Model auto-sync off, so the file is never rewritten. |
+| `tunnel`, `modelSync` (Claude) | Tunnel off. Model auto-sync off, so the file is never rewritten. (Alibaba routers keep the official default: auto-sync on, but API-key providers are not synced.) |
 
-**3c. The patches.** Copy `patch-jevonian-waf.mjs` and `patch-jevonian-effort.mjs` into **all four** router folders, and
-`patch-jevonian-haiku.mjs` into **`jev-router-claude` only**. You don't run them yourself: `start.js` does, on every start.
+**3c. The patches.** Save the two shared patches in `jev-router-qwen`, then copy them to the other three routers. Save the
+Haiku patch in `jev-router-claude` only. You don't run them yourself: `start.js` does, on every start.
 
-<details><summary><code>patch-jevonian-waf.mjs</code> (all four routers)</summary>
+<details><summary><code>jevonian\jev-router-qwen\patch-jevonian-waf.mjs</code> (then copied to all routers)</summary>
 
 ```js
 // Idempotent patch for jevonian 0.1.7+ — defangs attack-looking text (paths, script tags,
@@ -774,7 +1174,7 @@ console.log("WAF patch: applied");
 
 </details>
 
-<details><summary><code>patch-jevonian-effort.mjs</code> (all four routers)</summary>
+<details><summary><code>jevonian\jev-router-qwen\patch-jevonian-effort.mjs</code> (then copied to all routers)</summary>
 
 ```js
 // Idempotent patch for jevonian 0.1.7 — per-routing `effort`, plus opt-in `forceEffort`.
@@ -865,7 +1265,7 @@ console.log(`Effort patch: applied (${applied} edit${applied === 1 ? "" : "s"})`
 
 </details>
 
-<details><summary><code>patch-jevonian-haiku.mjs</code> (<code>jev-router-claude</code> only)</summary>
+<details><summary><code>jevonian\jev-router-claude\patch-jevonian-haiku.mjs</code> (Claude router only)</summary>
 
 ```js
 // Idempotent patch — makes legacy-thinking models (Haiku 4.5 and older, i.e. every model
@@ -934,9 +1334,9 @@ console.log("Haiku patch: applied");
 
 </details>
 
-**3d. `start.js`:** the same file in all four router folders.
+**3d. `start.js`.** Save it in `jev-router-qwen`, then copy it (and the two shared patches) to the other routers:
 
-<details><summary><code>jev-router-*\start.js</code></summary>
+<details><summary><code>jevonian\jev-router-qwen\start.js</code> (then copied to all routers)</summary>
 
 ```js
 // start.js — starts THIS Jevonian router (run by `jev start <name>`, or by a CMD command when the router is down).
@@ -1006,10 +1406,18 @@ child.on("exit", (code) => process.exit(code ?? 0));
 
 </details>
 
+```bat
+cd /d %JEVAI%\jevonian
+for %r in (kilo claude opencode) do copy /y jev-router-qwen\start.js jev-router-%r\ && copy /y jev-router-qwen\patch-jevonian-waf.mjs jev-router-%r\ && copy /y jev-router-qwen\patch-jevonian-effort.mjs jev-router-%r\
+```
+
+Expected output: CMD echoes each `copy …` line, followed by `1 file(s) copied.` three times, for kilo, claude and opencode
+(nine copies in total).
+
 **3e. The client configs.** They're read by the CMD commands (Kilo, OpenCode), or used when you run the real client inside
 the router folder (Qwen's `/model` list):
 
-<details><summary><code>jev-router-kilo\.kilo\kilo.json</code> (injected as <code>KILO_CONFIG_CONTENT</code>)</summary>
+<details><summary><code>jevonian\jev-router-kilo\.kilo\kilo.json</code> (injected as <code>KILO_CONFIG_CONTENT</code>)</summary>
 
 ```json
 {
@@ -1088,7 +1496,7 @@ the router folder (Qwen's `/model` list):
 
 </details>
 
-<details><summary><code>jev-router-opencode\opencode.json</code> (injected as <code>OPENCODE_CONFIG_CONTENT</code>)</summary>
+<details><summary><code>jevonian\jev-router-opencode\opencode.json</code> (injected as <code>OPENCODE_CONFIG_CONTENT</code>)</summary>
 
 ```json
 {
@@ -1167,7 +1575,7 @@ the router folder (Qwen's `/model` list):
 
 </details>
 
-<details><summary><code>jev-router-qwen\.qwen\settings.json</code> (for <code>qwen-direct</code> run inside <code>jev-router-qwen</code>)</summary>
+<details><summary><code>jevonian\jev-router-qwen\.qwen\settings.json</code> (for <code>qwen-direct</code> run inside <code>jev-router-qwen</code>)</summary>
 
 ```json
 {
@@ -1237,9 +1645,12 @@ the router folder (Qwen's `/model` list):
 
 - **Kilo and OpenCode model names:** `jevonian/jevonian/auto` means provider `jevonian`, model `jevonian/auto`.
 - **Qwen model names:** plain `jevonian/auto`.
-- **The `limit` values** (200,000 context, 65,536 output) are what the clients plan with. The router still sends each turn to the model the tier names.
+- **The `limit` values** (200,000 context, 65,536 output) are what the clients plan with. The router still sends each turn to
+  the model the tier names.
 
 ### Step 4: jev-gateway (official, unmodified)
+
+<details><summary><code>jev-gateway\package.json</code></summary>
 
 ```json
 {
@@ -1252,11 +1663,13 @@ the router folder (Qwen's `/model` list):
 }
 ```
 
+</details>
+
 ```bat
-cd /d D:\learn\JevAI\jev-gateway && npm install --no-audit --no-fund
+cd /d %JEVAI%\jev-gateway && npm install --no-audit --no-fund
 ```
 
-Expected output: `added 3 packages in 2s`. The official launchers are now `node_modules\jev-gateway\bin\jev-claude.mjs` and
+Expected output: `added 3 packages in …s`. The official launchers are now `node_modules\jev-gateway\bin\jev-claude.mjs` and
 `jev-opencode.mjs`. Add the three small files below; they only pass documented settings to those launchers:
 
 <details><summary><code>jev-gateway\gateway-env.js</code></summary>
@@ -1412,9 +1825,9 @@ launch({
 
 ### Step 5: the command layer
 
-Create `jevonian\jev.js`, `jevonian\kilo.js`, `qwen.js`, `opencode.js`, `claude.js`, and `jevonian\lib\targets.js`,
-`common.js`, `launch.js`, `monitor.js`. [Appendix A](#appendix-a-the-command-layer-every-file-in-full) has every file in
-full. What they do:
+Save the nine files of [Appendix A](#appendix-a-the-command-layer-every-file-in-full) at the paths in their titles:
+`jevonian\jev.js`, `jevonian\kilo.js`, `jevonian\qwen.js`, `jevonian\opencode.js`, `jevonian\claude.js`,
+`jevonian\lib\targets.js`, `jevonian\lib\common.js`, `jevonian\lib\launch.js`, `jevonian\lib\monitor.js`. What they do:
 
 - **`lib\targets.js`:** the six servers: ports, URLs, folders, window titles.
 - **`lib\common.js`:**
@@ -1432,39 +1845,41 @@ full. What they do:
 - **`kilo.js` / `qwen.js` / `opencode.js` / `claude.js`:** the wiring from 4.4.
 - **`jev.js`:** `jev start | stop | restart | status | logs | windows | dashboards | test | install | uninstall`.
 
-Check the syntax of everything:
+Check the syntax of all 16 scripts; each prints `ok` and its name:
 
 ```bat
-cd /d D:\learn\JevAI
-for %f in (jevonian\*.js jevonian\lib\*.js jevonian\jev-router-qwen\start.js jev-gateway\*.js) do node --check "%f"
+cd /d %JEVAI%
+for %f in (jevonian\*.js jevonian\lib\*.js jevonian\jev-router-qwen\start.js jevonian\jev-router-kilo\start.js jevonian\jev-router-claude\start.js jevonian\jev-router-opencode\start.js jev-gateway\*.js) do @node --check "%f" && echo ok %f
 ```
-
-No output means no errors.
 
 ### Step 6 (optional): prove the installs are the official ones
 
+Do this **before step 8** (the first start patches Jevonian):
+
 ```bat
-mkdir %TEMP%\jevpack && cd /d %TEMP%\jevpack
+mkdir %TEMP%\jevpack
+cd /d %TEMP%\jevpack
 npm pack jevonian@0.1.7 jev-gateway@0.4.3
 mkdir jevonian jev-gateway
 tar -xzf jevonian-0.1.7.tgz -C jevonian
 tar -xzf jev-gateway-0.4.3.tgz -C jev-gateway
-fc /b jevonian\package\dist\cli.mjs D:\learn\JevAI\jevonian\jev-router-kilo\node_modules\jevonian\dist\cli.mjs
-fc /b jev-gateway\package\dist\app.js D:\learn\JevAI\jev-gateway\node_modules\jev-gateway\dist\app.js
+fc /b jevonian\package\dist\cli.mjs %JEVAI%\jevonian\jev-router-kilo\node_modules\jevonian\dist\cli.mjs
+fc /b jev-gateway\package\dist\app.js %JEVAI%\jev-gateway\node_modules\jev-gateway\dist\app.js
 ```
 
-- **Before the first start:** both comparisons print `FC: no differences encountered`. In this build, all four Jevonian
-  copies and jev-gateway were identical to the tarballs, file for file.
+- **Before the first start:** both comparisons print `FC: no differences encountered`. In the original build, all four
+  Jevonian copies and jev-gateway were identical to the tarballs, file for file.
 - **After the first start:** the Jevonian `cli.mjs` differs by exactly the patch edits ([Appendix B](#appendix-b-exact-diff-of-the-patched-jevonian-against-the-official-017)),
   and jev-gateway stays identical.
 
 ### Step 7: install the CMD commands
 
 ```bat
-node D:\learn\JevAI\jevonian\jev.js install
+node %JEVAI%\jevonian\jev.js install
 ```
 
-Output from this build (it replaced the entry of the older copy this setup was moved from):
+The output, from the original build. On a PC without an older copy, the first line reads
+`[jev] AutoRun set; previous value saved to …`:
 
 ```text
 [jev] AutoRun set (replaced 1 older jev.doskey entry); previous value saved to D:\learn\JevAI\jevonian\autorun.backup.json
@@ -1475,7 +1890,8 @@ Output from this build (it replaced the entry of the older copy this setup was m
 
 It writes two things:
 
-1. **`D:\learn\JevAI\jevonian\jev.doskey`:** plain-text CMD macros (`doskey`), with no `.bat` files:
+1. **`%JEVAI%\jevonian\jev.doskey`:** plain-text CMD macros (`doskey`), with no `.bat` files. In the original build (the
+   `*-direct` lines point to wherever `where claude`, `where kilo`… finds the real programs on your PC):
 
    ```text
    kilo=node "D:\learn\JevAI\jevonian\kilo.js" $*
@@ -1499,15 +1915,16 @@ It writes two things:
 
    - An AutoRun value you already had is kept; the fragment is appended with `&`.
    - The previous value is saved to `autorun.backup.json`.
-   - Entries that load a `jev.doskey` from another folder (an older copy) are replaced.
+   - Entries that load a `jev.doskey` from another folder (an older copy) are replaced, so the commands now point to this copy.
    - `jev uninstall` removes exactly this fragment.
 
-Open a **new** CMD window: `doskey /macros` lists the commands. A doskey macro file has no comment syntax, so it has no
-header line; a `;` line would print "Invalid macro definition." in every window.
+**Open a new CMD window now.** `doskey /macros` lists the commands. Everything from here on runs in such a window, and
+doesn't need `%JEVAI%`. A doskey macro file has no comment syntax, so it has no header line; a `;` line would print
+"Invalid macro definition." in every window.
 
 **Limits of doskey macros:** they work at the **interactive CMD prompt** only. They don't work in `.bat` files, in PowerShell,
-or with `cmd /d`. There, run the file directly, for example `node D:\learn\JevAI\jevonian\kilo.js run "…"`. The commands
-behave the same; the macro only saves typing.
+or with `cmd /d`. There, run the file directly, for example `node %JEVAI%\jevonian\kilo.js run "…"`. The commands behave the
+same; the macro only saves typing.
 
 ### Step 8: start everything
 
@@ -1515,7 +1932,7 @@ behave the same; the macro only saves typing.
 jev start
 ```
 
-Output from this build, the first start after the installs (5.7 seconds in total):
+Output from the original build, the first start after the installs (5.7 seconds in total):
 
 ```text
 [jev] qwen         :8793  started
@@ -1525,6 +1942,8 @@ Output from this build, the first start after the installs (5.7 seconds in total
 [jev] jev-claude   :8789  started
 [jev] jev-opencode :8791  started
 ```
+
+If a line says `already running` on a fresh build, an older copy still owns that port: go back to step 0.
 
 You don't have to run `jev start`: every CMD command starts what it needs. Each router's log starts like this
 (`jev logs qwen`); on the first start after an install, every patch says `applied`, and later `already applied`:
@@ -1540,7 +1959,8 @@ providers: alibaba-tokenplan
 routing: auto (models: jevonian/auto, jevonian/plan, jevonian/execute, jevonian/utility, jevonian/chat, jevonian/small, jevonian/large)
 ```
 
-The Claude router also prints `Haiku patch: applied` and `models: auto-sync disabled`. Then check with `jev status`:
+The Claude router also prints `Haiku patch: applied` and `models: auto-sync disabled`. Then check with `jev status`
+(the status window column says `open` only once you've done step 10):
 
 ```text
   name           command        port   state  status window   web page
@@ -1562,7 +1982,7 @@ The Claude router also prints `Haiku patch: applied` and `models: auto-sync disa
 jev test
 ```
 
-It runs three groups, and the output is also saved to `jevonian\run\`:
+It takes about 5 minutes and runs three groups. The output is also saved to `jevonian\run\`:
 
 1. **`jev test brains`:** both Jev channels on every router, through Jevonian's own "Test channel" endpoint.
 2. **`jev test tiers`:** every tier of every router, pinned:
@@ -1575,9 +1995,11 @@ It runs three groups, and the output is also saved to `jevonian\run\`:
    - "Read the file notes.txt …", which needs a tool call; the file holds a random `JEV-NOTES-…` line
    - it checks the answer, that the router logged the request, and (gateways) that the gateway saw it
 
-   The full client output goes to `run\test-output\`. Add `set JEV_TEST_WINDOWS=1` first to watch it in the status windows.
+   The full client output goes to `run\test-output\`. Run `set JEV_TEST_WINDOWS=1` first (after step 10) to watch it live in
+   the status windows.
 
-The real results of this build:
+The real results of the original build. Times, costs, `JEV-NOTES-…` values and, for `jevonian/auto`, Jev's tier picks will
+differ in yours; every line must say `PASS`:
 
 ```text
 
@@ -1653,17 +2075,79 @@ The real results of this build:
   `jevonian launch claude` maps to `jevonian/utility` (Sonnet 5, medium).
 - **`jev-opencode` read:** see [known behaviours](#11-known-behaviours-and-limits) for why it shows `(read)` and not `forced`.
 
-### Step 10: open the status windows and the web pages
+### Step 10: open the six status windows
 
 ```bat
 jev windows
-jev dashboards
 ```
 
-- **`jev windows`** opens six windows: `JEVONIAN - QWEN - :8793`, `JEVONIAN - KILO - :8795`, `JEVONIAN - CLAUDE - :8797`,
-  `JEVONIAN - OPENCODE - :8799`, `JEV-GATEWAY - CLAUDE - :8789`, `JEV-GATEWAY - OPENCODE - :8791`.
-- **`jev dashboards`** opens the six web pages in your browser (section 8).
-- Closing a window never stops a router. The CMD commands open their own window anyway.
+This opens six console windows: `JEVONIAN - QWEN - :8793`, `JEVONIAN - KILO - :8795`, `JEVONIAN - CLAUDE - :8797`,
+`JEVONIAN - OPENCODE - :8799`, `JEV-GATEWAY - CLAUDE - :8789` and `JEV-GATEWAY - OPENCODE - :8791`.
+- Each shows its header (section 7) and the requests so far.
+- Closing a window never stops a router.
+- The CMD commands also open their own window when you use them.
+
+### Step 11: check every tool in the browser (seven tabs)
+
+Open these **seven tabs**, one per web server plus the combined gateway page. Paste the URLs, or run `jev dashboards`.
+`jev dashboards` opens tabs 5 and 6 as listed, and tabs 1 to 4 on the router's **Overview** page (`/`); click **Logs**
+in its left menu. Open tab 7 by hand.
+
+| Tab | Tool (command) | URL |
+|---|---|---|
+| 1 | Qwen Code (`qwen`) | http://127.0.0.1:8793/logs |
+| 2 | Kilo (`kilo`) | http://127.0.0.1:8795/logs |
+| 3 | Claude Code through Jevonian (`claude`), and the Jevonian half of `jev-claude` | http://127.0.0.1:8797/logs |
+| 4 | OpenCode through Jevonian (`opencode`), and the Jevonian half of `jev-opencode` | http://127.0.0.1:8799/logs |
+| 5 | Claude Code through jev-gateway (`jev-claude`) | http://127.0.0.1:8789/dashboard?peers=none |
+| 6 | OpenCode through jev-gateway (`jev-opencode`) | http://127.0.0.1:8791/dashboard?peers=none |
+| 7 | both gateways on one page | http://127.0.0.1:8789/dashboard |
+
+Then send one request per tool: `jev test clients` does all six. Or, from any project folder, one tool at a time:
+`qwen -p "Reply with exactly: QWEN_OK"`, `kilo run "Reply with exactly: KILO_OK"`, `opencode run "Reply with exactly: OPENCODE_OK"`,
+`claude -p "Reply with exactly: CLAUDE_OK"`, `jev-claude -p "Reply with exactly: JEV_CLAUDE_OK"`,
+`jev-opencode run "Reply with exactly: JEV_OPENCODE_OK"`. Refresh the tabs and check:
+
+**Tabs 1 to 4 (Jevonian, the Logs page):**
+- **A new row per request, at the time you sent it,** with columns TIME, MODEL, PROVIDER, PHASE, EFFORT, STATUS, COST,
+  LATENCY:
+  - PHASE is the tier Jev chose.
+  - MODEL and EFFORT must be that tier's model and effort from [the tier tables](#the-tiers): for example `chat` →
+    deepseek-v4.1-flash · low, or `utility` → claude-sonnet-5 · medium.
+  - STATUS must be 200.
+  - PROVIDER is `Alibaba Tokenplan` (tabs 1, 2, 4), or `Claude` / `Claude Subscription Haiku` (tab 3).
+- **"details →" on a row** opens the decision:
+  - provider · model, "you requested" (`jevonian/auto` or a pinned tier), phase, thinking effort, and the reason
+    (e.g. `brain:chat`)
+  - the Jev brain call with its verdict and the probability of every tier
+  - the captured prompt
+- **The same rows as the tool's status window** (section 7): same time, phase, model, effort, status, cost and latency.
+- **Also check once per router:**
+  - **Overview (`/`):** the local endpoint `http://127.0.0.1:<port>/v1`, "No keys exist yet", tunnel "public · off", and
+    `v0.1.7`. On tab 3: the Claude 5-hour and 7-day quota.
+  - **Providers (`/providers`):** the credential column says `env:ALIBABA_TOKENPLAN_API_KEY` (tabs 1, 2, 4) or
+    `oauth:claude-code` (tab 3). The routing brain lists `1 · primary TypeSafe (direct) env:TYPESAFE_API_KEY` and
+    `2 · fallback Vercel AI Gateway env:AI_GATEWAY_API_KEY`.
+  - **Routing (`/routing`):** one card per tier with its model: 6 cards on tabs 1, 2 and 4; 5 on tab 3. This page doesn't
+    show `effort`, which isn't an official field; the effort is checked on the Logs page.
+
+**Tabs 5 and 6 (jev-gateway, one tool each):**
+- **The card** (`claude · :8789` or `opencode · :8791`):
+  - a status of **Routing** or **Passthrough only**, never "Jev is failing" or "Offline"
+  - the upstream line `→ http://127.0.0.1:8797/v1` (tab 5) or `→ http://127.0.0.1:8799/v1` (tab 6)
+  - `Jev model jev-latest via typesafe`
+- **"Jev calls … none failed".**
+- **"Recent requests":** a row per request, with Client, Model (`jevonian/auto`, or `jevonian/utility` for Claude Code's
+  background call), Tools, Mode (`hint`, `none`, `passthrough`, or `forced`), Tool, Conf., Reason and Status 200. The
+  same rows appear in the `JEV-GATEWAY` status window.
+- **The same request on the Jevonian tab behind it:** tab 3 for jev-claude, tab 4 for jev-opencode, 1 to 2 s later
+  (section 9).
+
+**Tab 7:** both cards side by side. It's the official combined page; its console errors for ports 8787, 8788 and 8790 are
+expected.
+
+All seven tabs must agree with the status windows and the client answers. [Section 9](#9-test-results-comparing-the-three-views-of-every-tool)
+shows that comparison for the original build.
 
 ---
 
@@ -1811,7 +2295,8 @@ Real content of the `JEV-GATEWAY - CLAUDE` window across a restart:
 
 ## 8. Web pages: one per tool
 
-Each of the six servers is its own web server on 127.0.0.1:
+Each of the six servers is its own web server on 127.0.0.1. [Step 11](#step-11-check-every-tool-in-the-browser-seven-tabs)
+lists the seven tabs to open and what to check on each.
 
 | Tool | Server | Page | What it shows |
 |---|---|---|---|
@@ -2030,7 +2515,7 @@ First check `jev status` (what's up), `jev logs <name>` (why a router or gateway
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `kilo`, `claude`… open the plain client, or "is not recognized" | The CMD window was opened before `jev install`, or you're in PowerShell / a `.bat` (no doskey macros there) | Open a **new** CMD window, or run `node D:\learn\JevAI\jevonian\kilo.js …` |
+| `kilo`, `claude`… open the plain client, or "is not recognized" | The CMD window was opened before `jev install`, or you're in PowerShell / a `.bat` (no doskey macros there) | Open a **new** CMD window, or run `node %JEVAI%\jevonian\kilo.js …` |
 | "Invalid macro definition." in every new CMD window | A line in `jev.doskey` that isn't `name=command` (e.g. a comment) | Run `jev install` again (it rewrites the file) |
 | `[jev] qwen did not start on :8793` | A patch refused ("pattern … found N times"), a key is missing, or the port is taken | `jev logs qwen`; `netstat -ano \| findstr ":8793"` |
 | `WARNING: ALIBABA_TOKENPLAN_API_KEY is empty` in `serve.log` | A key file is missing or has no `API Key:` line | Fix `jevonian\credentials\` (step 2), then `jev restart` |
@@ -2056,6 +2541,8 @@ First check `jev status` (what's up), `jev logs <name>` (why a router or gateway
 
 ## 13. Upgrading and rolling back
 
+The commands below use `%JEVAI%`: run `set JEVAI=<your root>` first in that CMD window, as in [step 0](#step-0-choose-the-root-folder-and-stop-any-other-copy).
+
 ### Jevonian (one router at a time; each has its own copy)
 
 1. **Read what changed:** `npm view jevonian version`, then https://github.com/xinyao27/jevonian/releases. Look for changes to
@@ -2064,7 +2551,7 @@ First check `jev status` (what's up), `jev logs <name>` (why a router or gateway
    delete that patch file instead of updating it.**
 2. **Stop the router:** `jev stop kilo`.
 3. **Install, exact version, in that folder only:**
-   `cd /d D:\learn\JevAI\jevonian\jev-router-kilo && npm install jevonian@X.Y.Z --save-exact`.
+   `cd /d %JEVAI%\jevonian\jev-router-kilo && npm install jevonian@X.Y.Z --save-exact`.
 4. **Start it:** `jev start kilo`, then `jev logs kilo`. Each patch prints `applied`.
    - **If one prints "pattern … found 0 times":** the router did not start and nothing was written. Find the new code shape with
      `findstr /n "withEffort brainState clientEffortOf parseRoutingEntry" node_modules\jevonian\dist\cli.mjs`, update that
@@ -2078,7 +2565,7 @@ First check `jev status` (what's up), `jev logs <name>` (why a router or gateway
 ```bat
 jev stop jev-claude
 jev stop jev-opencode
-cd /d D:\learn\JevAI\jev-gateway && npm install jev-gateway@X.Y.Z --save-exact
+cd /d %JEVAI%\jev-gateway && npm install jev-gateway@X.Y.Z --save-exact
 jev test clients jev-claude
 jev test clients jev-opencode
 ```
@@ -2103,7 +2590,7 @@ Updating Claude Code, OpenCode, Kilo or Qwen Code needs nothing here. Run `jev t
   4. Delete the old folder's `node_modules` (they are recreated) and run `npm install` in each package folder. Starting fresh is the clean way.
 - **Uninstall completely:**
   1. `jev stop`, `jev windows close`, `jev uninstall`.
-  2. Delete `D:\learn\JevAI\jevonian` and `D:\learn\JevAI\jev-gateway`.
+  2. Delete `%JEVAI%\jevonian` and `%JEVAI%\jev-gateway`.
   3. Optionally delete `%USERPROFILE%\.jev-gateway` (the gateway's logs).
   4. Nothing else was written on your PC.
 
