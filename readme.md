@@ -84,6 +84,25 @@ reuses the running router.
 `[jev] started JEVONIAN CLAUDE -> opened its dashboard http://127.0.0.1:8797/`. Set `JEV_OPEN_DASHBOARD=0` to turn this off.
 `jev dashboards` opens all six at any time.
 
+**Is there a web page for every tool?** Yes, six: one web server per tool, each its own process. `jev status` lists them.
+
+| Tool | Project | Web server | Open this page | Shows |
+|---|---|---|---|---|
+| `qwen` | Jevonian | 127.0.0.1:8793 | http://127.0.0.1:8793/logs | tier, model, **effort**, status, cost per request |
+| `kilo` | Jevonian | 127.0.0.1:8795 | http://127.0.0.1:8795/logs | same |
+| `claude` | Jevonian | 127.0.0.1:8797 | http://127.0.0.1:8797/logs | same (also `jev-claude`'s turns, which pass through it) |
+| `opencode` | Jevonian | 127.0.0.1:8799 | http://127.0.0.1:8799/logs | same (also `jev-opencode`'s turns) |
+| `jev-claude` | jev-gateway | 127.0.0.1:8789 | http://127.0.0.1:8789/dashboard?peers=none | mode (`forced`/`hint`/`none`/`passthrough`), tool Jev picked, confidence, tokens |
+| `jev-opencode` | jev-gateway | 127.0.0.1:8791 | http://127.0.0.1:8791/dashboard?peers=none | same |
+
+- **jev-gateway's page is only at `/dashboard`.** Its root `http://127.0.0.1:8789/` answers **404 "Not found"** by design, so
+  it can look like there's no server.
+- **Without `?peers=none`** (official option), the gateway page also shows every other gateway it finds on the default ports,
+  so `:8789/dashboard` and `:8791/dashboard` look the same (both cards). That's the combined view.
+- A request through `jev-claude` / `jev-opencode` therefore shows up **twice**: on the gateway page (which tool) and on the
+  Jevonian page behind it (which model and effort).
+- Ports 8794, 8796, 8798 and 8800 (port+1) are Jevonian's tunnel surface. They answer 401 and aren't web pages.
+
 **After a reboot?** Nothing runs until your first command, which starts what it needs. There's no Windows service or
 autostart. Pre-start everything with `jev start`, and stop everything with `jev stop`.
 
@@ -612,7 +631,9 @@ Kilo and OpenCode list the seven `Jev …` models under `Jevonian :<port>`, and 
 - Pages: **Overview**, **Providers**, **Routing**, **Activity**, **Clients**, **Logs**
 - **Logs** has an **Effort** column: the level the model was *actually sent*, read back from the outgoing body
 
-The jev-gateway dashboard is http://127.0.0.1:8789/dashboard, and it shows both gateways on one page.
+jev-gateway has one web server per tool: http://127.0.0.1:8789/dashboard?peers=none (`jev-claude`) and
+http://127.0.0.1:8791/dashboard?peers=none (`jev-opencode`). Leave off `?peers=none` to see both gateways on one page.
+The gateway root `/` returns 404. See [Is there a web page for every tool?](#faq-starting-stopping-dashboards).
 
 **The ledger** (`data\ledger.jsonl`, one JSON line per request):
 
@@ -1048,7 +1069,7 @@ Arguments pass through, so everything official works:
 jev-claude --dangerously-skip-permissions        :: Claude Code through the gateway (→ Jevonian)
 jev-claude --model jevonian/plan -p "…"          :: pin a tier
 jev-claude --status                              :: is it running, where does it forward, which key
-jev-claude --dashboard                           :: open http://localhost:8789/dashboard
+jev-claude --dashboard                           :: official: open http://localhost:8789/dashboard (both gateways)
 jev-claude --routing off                         :: baseline: stop asking Jev about tools, keep metering
 jev-claude --stop
 jev-opencode        |  jev-opencode run "…"  |  jev-opencode --status  |  jev-opencode --stop
@@ -1058,13 +1079,19 @@ Logs are in `%USERPROFILE%\.jev-gateway\claude.log` and `opencode.log` (the offi
 
 ### The dashboard
 
-`http://127.0.0.1:8789/dashboard` shows **both** gateways, because they're on the official default ports it looks for:
-- the **claude · :8789** card, with upstream `http://127.0.0.1:8797/v1`
-- the **opencode · :8791** card, with upstream `http://127.0.0.1:8799/v1`
-- Jev's calls, latency and confidence; LLM tokens; *Why requests were not routed*; and a live table (mode, tool, confidence, status)
+Each gateway is its own web server, and the page is only at **`/dashboard`**. The root `/` answers 404 by design.
 
-Console `ERR_CONNECTION_REFUSED` for 8787/8788/8790 is expected: the page also probes the standalone server, Gemini and Codex
-ports. "**Passthrough only**" isn't a failure: Jev said no tool was needed, or its confidence was below 0.7, or there
+| Page | Shows |
+|---|---|
+| http://127.0.0.1:8789/dashboard?peers=none | only `jev-claude`: the **claude · :8789** card, upstream `http://127.0.0.1:8797/v1` |
+| http://127.0.0.1:8791/dashboard?peers=none | only `jev-opencode`: the **opencode · :8791** card, upstream `http://127.0.0.1:8799/v1` |
+| http://127.0.0.1:8789/dashboard (or :8791) | **both** cards: without `?peers=none` the page also polls the other official default ports |
+
+Each page shows Jev's calls, latency and confidence; LLM tokens; *Why requests were not routed*; and a live table (mode,
+tool, confidence, status). The status windows, `jev status` and `jev dashboards` use the per-tool `?peers=none` pages.
+
+On the combined view, console `ERR_CONNECTION_REFUSED` for 8787/8788/8790 is expected: the page also probes the standalone
+server, Gemini and Codex ports, which aren't used here. "**Passthrough only**" isn't a failure: Jev said no tool was needed, or its confidence was below 0.7, or there
 were no tools. Model and effort for the same turns are on the **Jevonian** dashboard (:8797 or :8799, Logs page).
 
 ### Troubleshooting
@@ -1082,7 +1109,11 @@ were no tools. Model and effort for the same turns are on the **Jevonian** dashb
   in Jevonian :8797 matched the table (plan Opus 5.5 xhigh … chat Haiku low).
 - **Tool use through the chain** (`jev-claude -p "List the files…"`): answered correctly. The gateway logged Jev's tool check.
 - **`jev-opencode`:** the gateway logged mode `none`, and the same turn in Jevonian :8799 showed chat → deepseek-v4.1-flash, low.
-- **Dashboards:** starting `jev-opencode` opened `http://127.0.0.1:8791/dashboard`. The :8789 dashboard shows both gateways.
+- **Dashboards:** starting `jev-opencode` opened its dashboard. `:8789/dashboard?peers=none` shows only the claude card,
+  `:8791/dashboard?peers=none` only the opencode card, and `:8789/dashboard` shows both.
+- **Every tool, its own page:** `jev-claude` appeared on :8789 at 11:31:53–54 (passthrough, `no_tool_needed`, 0.99) and
+  on Jevonian :8797 at 11:31:55–56. `jev-opencode` appeared on :8791 at 11:32:14 (mode `none`, confidence 1.00) and on
+  Jevonian :8799 at 11:32:16–17 (chat, deepseek, low).
 
 ---
 
@@ -1141,6 +1172,18 @@ gateway :8789 → Jevonian :8797, which listed the files.
 
 **Dashboards:** starting a router through a command opened its dashboard, e.g. `http://127.0.0.1:8791/dashboard`.
 
+**Every tool, checked on its own web page** (Playwright, one tab per server, 11:30–11:33). Each tool ran once from an
+unrelated folder and answered its marker:
+
+| Tool | Answer | Its page showed |
+|---|---|---|
+| `qwen` | WEB_QWEN_OK | :8793/logs 11:31:08 chat · deepseek-v4.1-flash · low · 200 |
+| `kilo` | WEB_KILO_OK | :8795/logs 11:31:28 chat · deepseek-v4.1-flash · low · 200 |
+| `opencode` | WEB_OPENCODE_OK | :8799/logs 11:31:45 chat · deepseek-v4.1-flash · low · 200 |
+| `claude` | WEB_CLAUDE_OK | :8797/logs 11:31:49 utility · Sonnet 5 · medium, 11:31:51 chat · Haiku 4.5 · low · 200 |
+| `jev-claude` | WEB_JEV_CLAUDE_OK | :8789/dashboard?peers=none 11:31:53–54 passthrough; then :8797/logs 11:31:55–56 utility · Sonnet 5 · medium |
+| `jev-opencode` | WEB_JEV_OPENCODE_OK | :8791/dashboard?peers=none 11:32:14 mode `none` (1.00); then :8799/logs 11:32:16–17 chat · deepseek · low |
+
 ---
 
 ## Quick Reference Card
@@ -1158,9 +1201,11 @@ jev status      jev start       jev stop            jev windows       jev dashbo
 kilo -m jevonian/jevonian/plan     qwen -m jevonian/large     opencode -m jevonian/jevonian/small
 claude --model jevonian/plan       jev-claude --model jevonian/heavy
 
-:: dashboards
-::   Jevonian     http://127.0.0.1:8793/  :8795/  :8797/  :8799/     (Logs -> Effort column)
-::   jev-gateway  http://127.0.0.1:8789/dashboard                    (both gateways)
+:: web pages, one per tool   (jev status lists them; jev dashboards opens them)
+::   qwen :8793/logs   kilo :8795/logs   claude :8797/logs   opencode :8799/logs     (Jevonian, Logs -> Effort column)
+::   jev-claude   http://127.0.0.1:8789/dashboard?peers=none    (jev-gateway; its / is 404)
+::   jev-opencode http://127.0.0.1:8791/dashboard?peers=none
+::   both gateways on one page: http://127.0.0.1:8789/dashboard
 
 :: without any router
 claude-direct   kilo-direct   qwen-direct   opencode-direct
