@@ -61,6 +61,16 @@ Verified on 2026-09-25 (see [Proof of working](#15-proof-of-working)):
 13. [Upgrading and rolling back](#13-upgrading-and-rolling-back)
 14. [Moving, stopping and uninstalling](#14-moving-stopping-and-uninstalling)
 15. [Proof of working](#15-proof-of-working)
+16. [Jev-Router for Claude Code — Complete Setup, Customization & Standalone Architecture](#16-jev-router-for-claude-code--complete-setup-customization--standalone-architecture)
+   - 16.1 [Architecture & Direct Integration: Why Claude Code Differs](#161-architecture--direct-integration-why-claude-code-differs)
+   - 16.2 [The 6-Tier Model & Reasoning Effort Routing Matrix](#162-the-6-tier-model--reasoning-effort-routing-matrix)
+   - 16.3 [Downloading & Setting Up Jev-Gateway & gargpratyush-jev-router](#163-downloading--setting-up-jev-gateway--gargpratyush-jev-router)
+   - 16.4 [Customizing Jev-Router for Claude Code](#164-customizing-jev-router-for-claude-code)
+   - 16.5 [Enabling Direct Execution in Plain Regular Windows CMD](#165-enabling-direct-execution-in-plain-regular-windows-cmd)
+   - 16.6 [Configuration, Credentials & Environment Isolation](#166-configuration-credentials--environment-isolation)
+   - 16.7 [Workspace-Scoped MCP Servers vs. Global Pollution](#167-workspace-scoped-mcp-servers-vs-global-pollution)
+   - 16.8 [Running Dedicated Dashboards on Separate Ports](#168-running-dedicated-dashboards-on-separate-ports)
+   - 16.9 [Replicating to Any New Workspace (e.g. graduated_project)](#169-replicating-to-any-new-workspace-eg-graduated_project)
 - [Appendix A: the command layer, every file in full](#appendix-a-the-command-layer-every-file-in-full)
 - [Appendix B: exact diff of the patched Jevonian against the official 0.1.7](#appendix-b-exact-diff-of-the-patched-jevonian-against-the-official-017)
 
@@ -2984,6 +2994,282 @@ Built and verified **2026-09-25** on Windows 11 Pro, Node v22.23.2, npm 10.9.8.
 | Restart | The `JEV-GATEWAY` windows follow gateway restarts and keep showing new requests (section 7) |
 | Same folder | Both official packages installed and ran from one folder; one request went gateway → Jevonian → Alibaba (section 10) |
 | Browser | All nine dashboard pages opened in tabs and matched the status windows (section 8) |
+
+---
+
+## 16. Jev-Router for Claude Code — Complete Setup, Customization & Standalone Architecture
+
+This section documents the standalone **Jev-Router for Claude Code** implementation, detailing how Claude Code is routed turn-by-turn through TypeSafe AI Jev, how the 6-tier matrix rewrites models and reasoning effort, how the Web UI dashboard displays workspace telemetry with path locations, and how to execute `claude --dangerously-skip-permissions` directly from plain Windows CMD without invoking `jev-*.js` wrapper scripts manually.
+
+---
+
+### 16.1 Architecture & Direct Integration: Why Claude Code Differs
+
+Unlike standard OpenAI-compatible coding agents, **Claude Code (v2.1.282+)** has unique characteristics:
+
+1. **Native Anthropic OAuth Authentication:**  
+   Claude Code logs in via browser OAuth (`claude login`), storing tokens in `%USERPROFILE%\.claude\.credentials.json`. It does not require a raw `ANTHROPIC_API_KEY` in `.env`. The router forwards the user's authentic credential upstream to `https://api.anthropic.com`.
+2. **Dynamic Ephemeral Reverse Proxy:**  
+   When a session starts, Jev-Router spawns a local loopback proxy on an ephemeral port (e.g. `http://127.0.0.1:51234`).
+3. **Environment Injection:**  
+   Claude Code is started with:
+   - `ANTHROPIC_BASE_URL=http://127.0.0.1:<proxy_port>` (redirects Claude Code's network requests to the proxy).
+   - `ANTHROPIC_CUSTOM_MODEL_OPTION=jev-router` (adds Jev-Router into Claude Code's model picker).
+   - `ANTHROPIC_MODEL=jev-router` (sets Jev-Router as the active model for the session).
+   - `CLAUDE_CODE_DISABLE_UNKNOWN_MODEL_WINDOW_ENFORCEMENT=1` (allows the virtual model name to pass client-side validation).
+   - `CLAUDE_CODE_ENABLE_GATEWAY_MODEL_DISCOVERY=1` (enables model discovery from the proxy).
+4. **Per-Turn Dynamic Rewriting:**  
+   On every user turn, Claude Code sends `POST /v1/messages` with `model: "jev-router"`. The proxy intercepts the prompt and tool definitions, evaluates them using TypeSafe AI Jev (`@typesafe-ai/sdk`), rewrites the model to the optimal Claude model (Haiku 4.5, Sonnet 5, Opus 5.5), injects or strips reasoning effort, forwards the payload to Anthropic, and streams tokens back to the user's terminal while recording telemetry.
+
+```text
+[Windows CMD]
+   │
+   ▼
+[claude.cmd] (Current Directory)
+   │
+   ▼
+[jev-claude-router.js] ──► Reads workspace .env (TYPESAFE_API_KEY, JEV_API_KEY)
+   │
+   ├─► Starts local dynamic reverse proxy (127.0.0.1:ephemeral_port)
+   ├─► Configures terminal statusline (bin/jev-statusline.mjs)
+   │
+   ▼
+[claude.exe] (Official binary with ANTHROPIC_BASE_URL=proxy, MODEL=jev-router)
+   │
+   ▼ (Sends /v1/messages with model: "jev-router")
+[Jev Reverse Proxy]
+   │
+   ├─► Calls TypeSafe Jev Brain (askJev / @typesafe-ai/sdk)
+   │   (Scores: taskComplexity, reasoningRequired, toolComplexity, contextSize)
+   │
+   ├─► Rewrites model: "jev-router" ──► "claude-sonnet-5" / "claude-opus-5-5" / "claude-haiku-4-5"
+   ├─► Sets / strips reasoning effort (none / low / medium / high / xhigh)
+   │
+   ├─► Forwards upstream to https://api.anthropic.com with client credentials
+   ├─► Streams response tokens back to Claude Code terminal
+   └─► Logs telemetry with cwd/project to %TEMP%\jev-claude\events.jsonl
+         ▲
+         │ (Polls events.jsonl every 1s)
+[Web UI Dashboard] (http://127.0.0.1:8790 or 8792)
+```
+
+---
+
+### 16.2 The 6-Tier Model & Reasoning Effort Routing Matrix
+
+Configured in `src/config.mjs`, Jev-Router dynamically routes each turn to one of six specialized tiers:
+
+| Tier Name | Target Model ID | Family | Thinking | Reasoning Effort | Task Classification & Typical Workloads |
+|---|---|---|---|---|---|
+| **`chat`** | `claude-haiku-4-5-20251001` | Haiku | `false` | `null` | **Conversations & Greetings:** Short chat replies, acknowledgments, general non-code questions. |
+| **`small`** | `claude-sonnet-5` | Sonnet | `true` | `low` | **Small Tasks:** Well-scoped 1–5 line bug fixes, simple script runs, variable renames, typo fixes. |
+| **`utility`** | `claude-sonnet-5` | Sonnet | `true` | `medium` | **Utilities & Lookups:** Summarizing files, doc lookups, listing APIs, mechanical checks, architecture walkthroughs. |
+| **`medium`** | `claude-sonnet-5` | Sonnet | `true` | `high` | **Standard Implementation:** Multi-file feature engineering, multi-step debugging across related files, tool loops. |
+| **`plan`** | `claude-opus-5-5` | Opus | `true` | `high` | **Architecture & Planning:** System architecture, database schema design, multi-module specifications, roadmaps. |
+| **`heavy`** | `claude-opus-5-5` | Opus | `true` | `xhigh` | **Complex Refactoring & Deep Bugs:** Difficult concurrency/race conditions, distributed transactions, high blast-radius changes. |
+
+#### Scoring Dimensions Evaluated by TypeSafe Jev:
+- **`taskComplexity` (0.0 to 1.0):** Overall structural difficulty of the requested operation.
+- **`reasoningRequired` (0.0 to 1.0):** Depth of logic, cross-file deduction, and planning needed.
+- **`toolComplexity` (0.0 to 1.0):** Number and types of MCP / file tools required to execute the turn.
+- **`contextSize` (0.0 to 1.0):** Approximate token length of conversation history and loaded files.
+- **`minConfidence` (default: 0.3):** If classification confidence falls below 0.3, the router falls back to the baseline model without breaking.
+
+---
+
+### 16.3 Downloading & Setting Up Jev-Gateway & gargpratyush-jev-router
+
+To set up the environment in any workspace folder (e.g. `D:\learn\gemini-mcp\gemini-blogdee-subdomain` or `D:\learn\graduated_project`):
+
+#### 1. Download / Clone the Repositories
+```bash
+# Clone jev-gateway (tool steering gateway)
+git clone https://github.com/vinilana/jev-gateway.git
+
+# Clone gargpratyush-jev-router (Claude Code model router)
+git clone https://github.com/gargpratyush/jev-router.git gargpratyush-jev-router
+```
+
+#### 2. Install Dependencies
+```bash
+cd gargpratyush-jev-router
+npm install --no-audit --no-fund
+cd ..
+
+cd jev-gateway
+npm install --no-audit --no-fund
+cd ..
+```
+
+#### 3. Workspace File Layout
+```text
+<workspace_root>\
+├── .claude\
+│   └── settings.local.json     <-- Pre-approves workspace MCP servers
+├── .env                        <-- JEV_API_KEY, TYPESAFE_API_KEY, JEV_DASHBOARD_PORT
+├── .mcp.json                   <-- Workspace-scoped MCP servers
+├── CLAUDE.md                   <-- Guidance for Claude Code sessions
+├── claude.cmd                  <-- Local CMD redirect to jev-claude-router.js
+├── package.json                <-- Workspace npm scripts
+├── jev-claude-router.js        <-- Launcher: Claude Code with Jev-Router
+├── jev-dashboard-router.js     <-- Launcher: Standalone Web Dashboard
+├── jev-explain-router.js       <-- Inspector: Explain last routing decision
+├── jev-history-router.js       <-- Inspector: Tail recent routing events
+├── gargpratyush-jev-router\    <-- Router source and dashboard assets
+└── memory\
+    └── memory.jsonl            <-- Isolated workspace knowledge graph
+```
+
+---
+
+### 16.4 Customizing Jev-Router for Claude Code
+
+Several production fixes and enhancements were applied directly to the router codebase:
+
+#### 1. Per-Turn Reasoning Effort Fix (`src/proxy.mjs`)
+* **Problem:** Anthropic Sonnet 5 and Haiku 4.5 throw HTTP 400 if per-turn `effort` is passed in `output_config`. Only Opus models support adaptive thinking effort.
+* **Fix:** In `src/proxy.mjs`, when rewriting to non-Opus models (`family !== "opus"`), `effort` is stripped from `output_config`, preventing HTTP 400 errors while preserving adaptive thinking.
+
+#### 2. Workspace Location & Telemetry Tracking (`src/proxy.mjs` & `src/status.mjs`)
+* **Problem:** Telemetry events only logged `path: "/v1/messages"` without tracking which local workspace directory triggered the request.
+* **Fix:** Injected `cwd: process.cwd()` and `project: basename(process.cwd())` into `routeEventData` in `src/proxy.mjs` and `logRouteEvent()` in `src/status.mjs`.
+
+#### 3. Dynamic Terminal Statusline (`bin/jev-statusline.mjs`)
+* Hooked into Claude Code via `--settings` with a custom command statusline.
+* Renders the actively routed model (e.g. `sonnet 5 [high]` or `opus 5.5 [high]`), routing latency (ms), and confidence in the terminal prompt.
+
+#### 4. Radix UI Modern Web Dashboard (`src/dashboard.html` & `bin/jev-dashboard.mjs`)
+* **Workspace Path Badge in Header:** Displays `📁 <workspace_path>` next to the `live` status badge.
+* **Router Card Metadata:** Displays `📁 Path: <workspace_path>` in the router status card.
+* **Location Column in Table:** Displays `📁 <project_name>` in the Recent Requests table with hover tooltip revealing full path and turn details.
+* **Thailand Time (24h format):** Renders all event timestamps in ICT (UTC+7 / Asia/Bangkok, `HH:mm:ss`).
+* **Automatic `.env` Loading:** Calls `process.loadEnvFile()` in `bin/jev-dashboard.mjs` to auto-detect `JEV_DASHBOARD_PORT`.
+
+---
+
+### 16.5 Enabling Direct Execution in Plain Regular Windows CMD
+
+#### The Problem: Why `jev-claude` Was Previously Required
+Previously, typing `claude` in regular Windows CMD invoked the global `claude.cmd` located in Node's directory (`C:\nvm4w\nodejs\claude.cmd`), which bypassed Jev-Router or had a hardcoded path to a single folder.
+
+#### The Solution: Local & Dynamic CMD Dispatchers
+
+1. **Local Project Dispatcher (`claude.cmd` in Project Root):**
+   Create a [`claude.cmd`](file:///D:/learn/graduated_project/claude.cmd) in each project root:
+   ```bat
+   @ECHO off
+   node "%~dp0jev-claude-router.js" %*
+   ```
+2. **Smart Global Dispatcher (`C:\nvm4w\nodejs\claude.cmd`):**
+   Update the global `claude.cmd` to inspect the current working directory (`%CD%`):
+   ```bat
+   @ECHO off
+   IF EXIST "%CD%\jev-claude-router.js" (
+     node "%CD%\jev-claude-router.js" %*
+   ) ELSE IF EXIST "%CD%\gargpratyush-jev-router\bin\jev-claude.mjs" (
+     node "%CD%\gargpratyush-jev-router\bin\jev-claude.mjs" %*
+   ) ELSE (
+     node "D:\learn\gemini-mcp\gemini-blogdee-subdomain\gargpratyush-jev-router\bin\jev-claude.mjs" %*
+   )
+   ```
+
+#### Why This Works in Windows CMD:
+Under Windows Command Prompt command precedence rules, CMD searches the **current directory (`%CD%`)** before searching directories in `%PATH%`. Therefore:
+```cmd
+D:\learn\graduated_project>claude --dangerously-skip-permissions
+```
+1. CMD executes `D:\learn\graduated_project\claude.cmd`.
+2. It forwards execution to `jev-claude-router.js` in that folder.
+3. The local proxy starts with that project's `.env` and `.mcp.json`.
+4. Claude Code runs completely routed, requiring **zero extra typing**.
+
+---
+
+### 16.6 Configuration, Credentials & Environment Isolation
+
+#### Workspace `.env` File
+Create `.env` in the root of the workspace:
+```env
+# TypeSafe Jev Router Configuration for Claude Code
+JEV_API_KEY=apikey_2667b02557855514355b68885339c5481be_d88b96a997cdbe72e8d3e59d4111ccbcb7a01a8bf4c18f1622c76c81ecd2431b
+TYPESAFE_API_KEY=apikey_2667b02557855514355b68885339c5481be_d88b96a997cdbe72e8d3e59d4111ccbcb7a01a8bf4c18f1622c76c81ecd2431b
+JEV_DEBUG=1
+JEV_DASHBOARD_PORT=8790   # Use 8790 for subdomain, 8792 for graduated_project
+```
+
+#### Authentication Rules:
+* **TypeSafe AI Brain:** Uses `TYPESAFE_API_KEY` (or `JEV_API_KEY`) to query TypeSafe routing models.
+* **Anthropic API:** Uses the user's existing Claude Code OAuth login (`claude login`). No Anthropic key is stored in `.env`.
+
+---
+
+### 16.7 Workspace-Scoped MCP Servers vs. Global Pollution
+
+To ensure clean isolation and avoid global tool pollution:
+
+1. **Define Tools in `.mcp.json` (`Project MCPs`):**
+   Put all MCP servers in `.mcp.json` in the workspace root. They will only be loaded when working in this project.
+2. **Pre-Approve in `.claude/settings.local.json`:**
+   ```json
+   {
+     "enabledMcpjsonServers": [
+       "playwright",
+       "playwright-chrome",
+       "read-website-fast",
+       "open-websearch",
+       "memory",
+       "ftp-server",
+       "mysql-database",
+       "context7",
+       "ref",
+       "stitch",
+       "autonews-web-hosting-mcp"
+     ]
+   }
+   ```
+3. **Isolate State Storage:**
+   Configure stateful tools (e.g. `memory`) with workspace-specific paths:
+   ```json
+   "env": {
+     "MEMORY_FILE_PATH": "D:\\learn\\graduated_project\\memory\\memory.jsonl"
+   }
+   ```
+4. **Prevent `~/.claude.json` Pollution:**
+   Ensure `projects[<path>].mcpServers` in `C:\Users\<user>\.claude.json` is set to `{}` so Claude Code does not classify project tools as "Local MCPs".
+
+---
+
+### 16.8 Running Dedicated Dashboards on Separate Ports
+
+To monitor multiple workspaces simultaneously without port collisions (`EADDRINUSE`):
+
+| Workspace | Dashboard Port | Web URL | Background Daemon Command |
+|---|---|---|---|
+| **`gemini-blogdee-subdomain`** | **`8790`** | `http://127.0.0.1:8790/` | `node jev-dashboard-router.js 8790` |
+| **`graduated_project`** | **`8792`** | `http://127.0.0.1:8792/` | `node jev-dashboard-router.js 8792` |
+
+Both dashboards can run 24/7 side-by-side in separate browser tabs.
+
+---
+
+### 16.9 Replicating to Any New Workspace (5-Minute Checklist)
+
+To add Claude Code + Jev-Router to any new directory (e.g. `D:\learn\my-new-project`):
+
+1. **Copy Router Source:**  
+   Copy `gargpratyush-jev-router` into `D:\learn\my-new-project\gargpratyush-jev-router`.
+2. **Copy Runner Scripts:**  
+   Copy `jev-claude-router.js`, `jev-dashboard-router.js`, `jev-explain-router.js`, `jev-history-router.js`, and `claude.cmd` to the project root.
+3. **Create `.env`:**  
+   Set `TYPESAFE_API_KEY` and pick a unique `JEV_DASHBOARD_PORT` (e.g. `8794`).
+4. **Create `.mcp.json` & `.claude/settings.local.json`:**  
+   Define project tools and adjust any file paths (such as `memory.jsonl`).
+5. **Launch:**  
+   Open plain Windows CMD in the project folder and run:
+   ```cmd
+   D:\learn\my-new-project>claude --dangerously-skip-permissions
+   ```
+   Claude Code will automatically start, route through Jev, and display live telemetry on your designated dashboard port.
 
 ---
 
